@@ -9,6 +9,7 @@ It is generated from these files:
 	server.proto
 
 It has these top-level messages:
+	DBSession
 */
 package proto_rpc
 
@@ -33,6 +34,27 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 
+// DBSession represents a database session request body
+type DBSession struct {
+	ID string `protobuf:"bytes,1,opt,name=ID,proto3" json:"id,omitempty" structs:"id,omitempty" mapstructure:"id,omitempty"`
+}
+
+func (m *DBSession) Reset()                    { *m = DBSession{} }
+func (m *DBSession) String() string            { return proto.CompactTextString(m) }
+func (*DBSession) ProtoMessage()               {}
+func (*DBSession) Descriptor() ([]byte, []int) { return fileDescriptorServer, []int{0} }
+
+func (m *DBSession) GetID() string {
+	if m != nil {
+		return m.ID
+	}
+	return ""
+}
+
+func init() {
+	proto.RegisterType((*DBSession)(nil), "proto_rpc.DBSession")
+}
+
 // Reference imports to suppress errors if they are not otherwise used.
 var _ context.Context
 var _ grpc.ClientConn
@@ -44,6 +66,7 @@ const _ = grpc.SupportPackageIsVersion4
 // Client API for API service
 
 type APIClient interface {
+	CreateDBSession(ctx context.Context, in *DBSession, opts ...grpc.CallOption) (*DBSession, error)
 }
 
 type aPIClient struct {
@@ -54,31 +77,70 @@ func NewAPIClient(cc *grpc.ClientConn) APIClient {
 	return &aPIClient{cc}
 }
 
+func (c *aPIClient) CreateDBSession(ctx context.Context, in *DBSession, opts ...grpc.CallOption) (*DBSession, error) {
+	out := new(DBSession)
+	err := grpc.Invoke(ctx, "/proto_rpc.API/CreateDBSession", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // Server API for API service
 
 type APIServer interface {
+	CreateDBSession(context.Context, *DBSession) (*DBSession, error)
 }
 
 func RegisterAPIServer(s *grpc.Server, srv APIServer) {
 	s.RegisterService(&_API_serviceDesc, srv)
 }
 
+func _API_CreateDBSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DBSession)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(APIServer).CreateDBSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto_rpc.API/CreateDBSession",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(APIServer).CreateDBSession(ctx, req.(*DBSession))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _API_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "proto_rpc.API",
 	HandlerType: (*APIServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams:     []grpc.StreamDesc{},
-	Metadata:    "server.proto",
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateDBSession",
+			Handler:    _API_CreateDBSession_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "server.proto",
 }
 
 func init() { proto.RegisterFile("server.proto", fileDescriptorServer) }
 
 var fileDescriptorServer = []byte{
-	// 88 bytes of a gzipped FileDescriptorProto
+	// 184 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x29, 0x4e, 0x2d, 0x2a,
 	0x4b, 0x2d, 0xd2, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0xe2, 0x04, 0x53, 0xf1, 0x45, 0x05, 0xc9,
 	0x52, 0xba, 0xe9, 0x99, 0x25, 0x19, 0xa5, 0x49, 0x7a, 0xc9, 0xf9, 0xb9, 0xfa, 0xe9, 0xf9, 0xe9,
-	0xf9, 0xfa, 0x60, 0xa9, 0xa4, 0xd2, 0x34, 0x30, 0x0f, 0xcc, 0x01, 0xb3, 0x20, 0x3a, 0x8d, 0x58,
-	0xb9, 0x98, 0x1d, 0x03, 0x3c, 0x93, 0xd8, 0xc0, 0x3c, 0x63, 0x40, 0x00, 0x00, 0x00, 0xff, 0xff,
-	0x8e, 0x60, 0x75, 0x72, 0x57, 0x00, 0x00, 0x00,
+	0xf9, 0xfa, 0x60, 0xa9, 0xa4, 0xd2, 0x34, 0x30, 0x0f, 0xcc, 0x01, 0xb3, 0x20, 0x3a, 0x95, 0x92,
+	0xb9, 0x38, 0x5d, 0x9c, 0x82, 0x53, 0x8b, 0x8b, 0x33, 0xf3, 0xf3, 0x84, 0xc2, 0xb8, 0x98, 0x3c,
+	0x5d, 0x24, 0x18, 0x15, 0x18, 0x35, 0x38, 0x9d, 0xdc, 0x5e, 0xdd, 0x93, 0xe7, 0xc9, 0x4c, 0xd1,
+	0xc9, 0xcf, 0xcd, 0x2c, 0x49, 0xcd, 0x2d, 0x28, 0xa9, 0xfc, 0x74, 0x4f, 0xde, 0xa8, 0xb8, 0xa4,
+	0xa8, 0x34, 0xb9, 0xa4, 0xd8, 0x4a, 0x09, 0x59, 0x42, 0x49, 0x21, 0x37, 0xb1, 0x00, 0x22, 0x53,
+	0x5a, 0x94, 0x8a, 0x26, 0x17, 0xc4, 0xe4, 0xe9, 0x62, 0xe4, 0xc2, 0xc5, 0xec, 0x18, 0xe0, 0x29,
+	0x64, 0xcb, 0xc5, 0xef, 0x5c, 0x94, 0x9a, 0x58, 0x92, 0x8a, 0xb0, 0x51, 0x44, 0x0f, 0xee, 0x72,
+	0x3d, 0xb8, 0xa8, 0x14, 0x56, 0xd1, 0x24, 0x36, 0xb0, 0xa0, 0x31, 0x20, 0x00, 0x00, 0xff, 0xff,
+	0x56, 0xc7, 0x87, 0x2f, 0xfb, 0x00, 0x00, 0x00,
 }

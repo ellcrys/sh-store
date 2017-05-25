@@ -36,14 +36,16 @@ var startCmd = &cobra.Command{
 
 		log.Infof("Running in '%s' environment", util.Env("ENV", "development"))
 
+		var rpcServer = servers.NewRPC()
+
 		// terminate app gracefully
 		util.OnTerminate(func(s os.Signal) {
 			log.Info("Termination signal received. Gracefully shutting down")
+			rpcServer.Stop()
 			os.Exit(0)
 		})
 
 		// create rpc server, pass database implementation
-		var rpcServer = servers.NewRPC()
 		if err := rpcServer.Start(bindAddrRPC, func(s *servers.RPC) {
 		}); err != nil {
 			return
@@ -53,15 +55,4 @@ var startCmd = &cobra.Command{
 
 func init() {
 	RootCmd.AddCommand(startCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// startCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// startCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-
 }
