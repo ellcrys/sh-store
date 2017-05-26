@@ -6,10 +6,10 @@ import (
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
-	"github.com/ncodes/safehold/servers/common"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
+	"github.com/ncodes/safehold/servers/common"
 )
 
 var (
@@ -69,7 +69,6 @@ func (o *OAuth) GetToken(w http.ResponseWriter, r *http.Request) (interface{}, i
 // getAppToken process a token request using the `client_credentials` grant type
 // and returns an app token that never expires.
 func (o *OAuth) getAppToken(w http.ResponseWriter, r *http.Request) (interface{}, int) {
-
 	var clientID = r.URL.Query().Get("client_id")
 	var clientSecret = r.URL.Query().Get("client_secret")
 

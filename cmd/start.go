@@ -45,8 +45,10 @@ var startCmd = &cobra.Command{
 
 		log.Infof("Running in '%s' environment", util.Env("ENV", "development"))
 
-		db := &cockroach.DB{ConnectionString: partitionChainConStr}
+		db := cockroach.NewDB()
+		db.ConnectionString = partitionChainConStr
 		rpcServer := servers.NewRPC(db)
+		httpServer := servers.NewHTTP(db, bindAddrRPC)
 
 		// terminate app gracefully
 		util.OnTerminate(func(s os.Signal) {
@@ -58,7 +60,7 @@ var startCmd = &cobra.Command{
 
 		// create rpc server, pass database implementation
 		if err := rpcServer.Start(bindAddrRPC, func(s *servers.RPC) {
-			servers.NewHTTP(bindAddrRPC).Start(bindAddrHTTP, nil)
+			httpServer.Start(bindAddrHTTP, nil)
 		}); err != nil {
 			return
 		}

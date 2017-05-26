@@ -37,6 +37,11 @@ func (s *Session) Connect(db patchain.DB) (err error) {
 	return
 }
 
+// SetDB sets the db connection to use directly
+func (s *Session) SetDB(db patchain.DB) {
+	s.db = db
+}
+
 // NumSessions returns the number of active sessions
 func (s *Session) NumSessions() int {
 	return len(s.agents)

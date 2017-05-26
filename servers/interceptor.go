@@ -8,11 +8,11 @@ import (
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/ellcrys/util"
 	middleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	"github.com/ncodes/safehold/servers/common"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
 	"github.com/ncodes/safehold/core/servers/oauth"
+	"github.com/ncodes/safehold/servers/common"
 	"golang.org/x/net/context"
 )
 

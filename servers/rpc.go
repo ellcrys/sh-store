@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/ellcrys/util"
-	"github.com/ncodes/safehold/db"
-	"github.com/ncodes/safehold/servers/proto_rpc"
+	"github.com/labstack/gommon/log"
 	"github.com/ncodes/cocoon/core/config"
 	"github.com/ncodes/patchain"
-	"github.com/ncodes/patchain/cockroach"
 	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
+	"github.com/ncodes/safehold/db"
+	"github.com/ncodes/safehold/servers/proto_rpc"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 )
@@ -65,13 +65,30 @@ func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 	time.AfterFunc(1*time.Second, func() {
 		logRPC.Infof("Started RPC server @ %s", addr)
 
+		// connect database
+		if err := s.db.Connect(1000, 10); err != nil {
+			log.Errorf("%v", err)
+			s.Stop()
+			return
+		}
+
+		// create tables if necessary
+		if err := s.db.CreateTables(); err != nil {
+			log.Errorf("%v", err)
+			s.Stop()
+			return
+		}
+
+		// create system resources if necessary
+		if err := s.createSystemResources(); err != nil {
+			log.Errorf("%v", err)
+			s.Stop()
+			return
+		}
+
 		// create db session manager
 		s.dbSession = db.NewSession(partitionChainConStr)
-		cdb := cockroach.NewDB()
-		cdb.ConnectionString = partitionChainConStr
-		if err = s.dbSession.Connect(cdb); err != nil {
-			logRPC.Fatalf("failed to create database session manager. Err: %s", err)
-		}
+		s.dbSession.SetDB(s.db)
 
 		startedCB(s)
 	})
