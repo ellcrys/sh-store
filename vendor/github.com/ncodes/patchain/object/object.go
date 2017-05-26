@@ -1,10 +1,9 @@
 package object
 
 import (
+	"fmt"
 	"strings"
 	"time"
-
-	"fmt"
 
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/copier"
@@ -58,8 +57,9 @@ func (o *Object) CreatePartitions(n int64, ownerID, creatorID string, options ..
 		dbOptions = options
 		for _, ops := range options {
 			if ops.GetName() == patchain.UseDBOptionName {
-				dbTx = ops.(*patchain.UseDBOption).GetValue().(patchain.DB)
-				finish = ops.(*patchain.UseDBOption).Finish
+				dbOpt := ops.(*patchain.UseDBOption)
+				dbTx = dbOpt.GetValue().(patchain.DB)
+				finish = dbOpt.Finish
 			}
 		}
 	}
@@ -101,25 +101,43 @@ func (o *Object) CreatePartitions(n int64, ownerID, creatorID string, options ..
 		})
 	}
 
-	var partitions []*tables.Object
+	partitions, err := process()
+
+	return partitions, errors.Wrap(err, "failed to create partition(s)")
+}
+
+// Retry runs an operation if it fails dues to a retry or prev_hash contention error
+func (o *Object) Retry(cb func(stop func()) error) error {
+	var err error
 	c := redo.NewDefaultBackoffConfig()
 	c.MaxElapsedTime = 10 * time.Minute
-	err := redo.NewRedo().BackOff(c, func(stop func()) error {
-		var err error
-		partitions, err = process()
+	err = redo.NewRedo().BackOff(c, func(stop func()) error {
+		err = cb(stop)
+		if err != nil && o.RequiresRetry(err) {
+			return err
+		}
+		stop()
+		return err
+	})
+	return err
+}
+
+// MustCreatePartitions is the same as CreatePartitions but it will retry the operation
+// if it fails because of a transaction retry or contention error. The retry will continue
+// to happen for max of 10 minutes using an exponential backoff algorithm.
+// Note: if an external database connection is passed using the db option and a transaction
+// fails, it will not be retried
+func (o *Object) MustCreatePartitions(n int64, ownerID, creatorID string, options ...patchain.Option) ([]*tables.Object, error) {
+	var partitions []*tables.Object
+	var err error
+	err = o.Retry(func(stop func()) error {
+		partitions, err = o.CreatePartitions(n, ownerID, creatorID, options...)
 		if err != nil {
-			if strings.Contains(err.Error(), "restart transaction") ||
-				strings.Contains(err.Error(), "retry transaction") ||
-				strings.Contains(err.Error(), `violates unique constraint "idx_name_prev_hash"`) {
-				return err
-			}
-			stop()
 			return err
 		}
 		return nil
 	})
-
-	return partitions, errors.Wrap(err, "failed to create partition(s)")
+	return partitions, err
 }
 
 // GetLast gets the latest version of an object.
@@ -152,6 +170,33 @@ func (o *Object) selectPartition(partitions []*tables.Object) *tables.Object {
 	} else {
 		return partitions[util.RandNum(0, len(partitions)-1)]
 	}
+}
+
+// RequiresRetry checks whether a transaction error
+// indicates or requires a retry. This method can detect cockroach db
+// restart, retry error and prev hash contention
+func (o *Object) RequiresRetry(err error) bool {
+	return strings.Contains(err.Error(), "restart transaction") ||
+		strings.Contains(err.Error(), "retry transaction") ||
+		strings.Contains(err.Error(), `violates unique constraint "idx_name_prev_hash"`)
+}
+
+// MustPut is the same as Put but it will retry the operation if it
+// fails because of a transaction retry or contention error.
+// The retry will continue to occur for max of 10 minutes using
+// an exponential backoff algorithm.
+// Note: if an external database connection is passed using the db option and a transaction
+// fails, it will not be retried
+func (o *Object) MustPut(objs interface{}, options ...patchain.Option) error {
+	var err error
+	err = o.Retry(func(stop func()) error {
+		err = o.Put(objs, options...)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return err
 }
 
 // Put adds an object into a randomly selected partition belonging to
@@ -201,6 +246,7 @@ func (o *Object) Put(objs interface{}, options ...patchain.Option) error {
 	// - Error indicating a restart or retry the transaction
 	// - Error indicating a previous hash unique index violation
 	var putTxFunc = func() error {
+
 		return o.db.TransactWithDB(dbTx, finish, func(dbTx patchain.DB, commit patchain.CommitFunc, rollback patchain.RollbackFunc) error {
 
 			// get the partitions belonging to the owner of the object
@@ -250,21 +296,7 @@ func (o *Object) Put(objs interface{}, options ...patchain.Option) error {
 		})
 	}
 
-	c := redo.NewDefaultBackoffConfig()
-	c.MaxElapsedTime = 10 * time.Minute
-	err := redo.NewRedo().BackOff(c, func(stop func()) error {
-		err := putTxFunc()
-		if err != nil {
-			if strings.Contains(err.Error(), "restart transaction") ||
-				strings.Contains(err.Error(), "retry transaction") ||
-				strings.Contains(err.Error(), `violates unique constraint "idx_name_prev_hash"`) {
-				return err
-			}
-			stop()
-			return err
-		}
-		return nil
-	})
+	err := putTxFunc()
 
 	return errors.Wrap(err, "failed to put object(s)")
 }
