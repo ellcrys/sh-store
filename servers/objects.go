@@ -5,12 +5,13 @@ import (
 
 	"strings"
 
+	"github.com/ellcrys/util"
 	"github.com/jinzhu/copier"
-	"github.com/ncodes/safehold/servers/common"
-	"github.com/ncodes/safehold/servers/proto_rpc"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
-	"github.com/ncodes/patchain/object"
+	"github.com/ncodes/safehold/db"
+	"github.com/ncodes/safehold/servers/common"
+	"github.com/ncodes/safehold/servers/proto_rpc"
 	"golang.org/x/net/context"
 )
 
@@ -75,18 +76,26 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	// ensure caller has permission to PUT objects on behalf of the object owner
 	developerID := ctx.Value(CtxIdentity).(string)
 	if developerID != req.Objects[0].OwnerID {
-		// TODO: check object owner ACL to see if object owner has granted developer permission
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to create objects for the owner", nil)
 	}
 
-	objHandler := object.NewObject(s.db)
+	// create new session
+	sessionID := s.dbSession.CreateSession(util.UUID4())
 
+	// send objects to the session
 	var objs []*tables.Object
 	copier.Copy(&objs, req.Objects)
-	if err := objHandler.Put(objs); err != nil {
+	if err := s.dbSession.SendOp(sessionID, &db.Op{
+		OpType: db.OpPutObjects,
+		Data:   objs,
+		Done:   make(chan struct{}),
+	}); err != nil {
 		logRPC.Errorf("%+v", err)
 		return nil, common.NewSingleAPIErr(500, common.CodePutError, "objects", err.Error(), nil)
 	}
+
+	// commit session and end it
+	s.dbSession.CommitEnd(sessionID)
 
 	resp, _ := NewMultiObjectResponse("object", objs)
 	return resp, nil

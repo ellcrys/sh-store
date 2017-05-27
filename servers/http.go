@@ -3,19 +3,20 @@ package servers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
 
 	"net"
 
+	"fmt"
+
 	"github.com/gorilla/mux"
 	"github.com/labstack/gommon/log"
 	"github.com/ncodes/cocoon/core/config"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
-	"github.com/ncodes/safehold/core/servers/common"
+	"github.com/ncodes/safehold/servers/common"
 	"github.com/ncodes/safehold/servers/oauth"
 	"github.com/ncodes/safehold/servers/proto_rpc"
 	"github.com/pkg/errors"
@@ -178,19 +179,28 @@ func (s *HTTP) createObjects(w http.ResponseWriter, r *http.Request) (interface{
 
 // query performs query operations
 func (s *HTTP) query(w http.ResponseWriter, r *http.Request) (interface{}, int) {
-	qm, err := s.db.NewQuery()
-	if err != nil {
-		return err, 500
-	}
-	qm.SetTable(tables.Object{}, true)
+	jsq := s.db.NewQuery()
 	b, _ := ioutil.ReadAll(r.Body)
-	err = qm.Parse(string(b))
+	err := jsq.Parse(string(b))
+	if err != nil {
+		return err, 400
+	}
+	sql, args, err := jsq.ToSQL()
 	if err != nil {
 		return err, 400
 	}
 	var out []tables.Object
-	if err = qm.Find(&out); err != nil {
-		return fmt.Errorf("all: %s", err), 500
+	err = s.db.GetAll(&tables.Object{
+		QueryParams: patchain.QueryParams{
+			Expr: patchain.Expr{
+				Expr: sql,
+				Args: args,
+			},
+		},
+	}, &out)
+	if err != nil {
+		return fmt.Errorf("all: %s", err), 400
 	}
+
 	return out, 200
 }

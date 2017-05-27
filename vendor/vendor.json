@@ -142,7 +142,6 @@
 		},
 		{
 			"checksumSHA1": "DOGELl/eJ66TomAnkQqKminijQU=",
-			"origin": "github.com/ncodes/safehold/vendor/github.com/gorilla/mux",
 			"path": "github.com/gorilla/mux",
 			"revision": "ff42f693046dbff42ecd32a0b1688a24cbf1a674",
 			"revisionTime": "2017-05-24T06:54:39Z"
@@ -396,11 +395,10 @@
 			"revisionTime": "2017-03-09T15:38:45Z"
 		},
 		{
-			"checksumSHA1": "yjjk+IXhhyHQvvKOvDvMip9hSnY=",
-			"origin": "github.com/ncodes/patchain/vendor/github.com/ncodes/jsq",
+			"checksumSHA1": "cySxT0ujCuwue2Etkq4phEQBSUg=",
 			"path": "github.com/ncodes/jsq",
-			"revision": "90544e65c80219e4f5a098a7cf67377553eb4276",
-			"revisionTime": "2017-05-25T11:27:37Z"
+			"revision": "0c5b91f18e140b665a262edaea207929a39ec1d9",
+			"revisionTime": "2017-05-27T12:24:05Z"
 		},
 		{
 			"checksumSHA1": "NzGc2vzpwLewzhuZ4A1Vinf8k7A=",
@@ -409,28 +407,28 @@
 			"revisionTime": "2017-03-20T09:03:40Z"
 		},
 		{
-			"checksumSHA1": "Lj45pR7dpRk5yCExlVDgso08QdI=",
+			"checksumSHA1": "IGMsDdTWw9iHFSWBNwWe2jkcmAM=",
 			"path": "github.com/ncodes/patchain",
-			"revision": "ad9ea4daed450120102475c017fc882b00b120c1",
-			"revisionTime": "2017-05-26T12:46:23Z"
+			"revision": "535007bacddd2ca7adb88cbddf5d308137ed5f2a",
+			"revisionTime": "2017-05-27T19:59:54Z"
 		},
 		{
-			"checksumSHA1": "cE5e6bL5rOAnl36/buXE4Ru6Bi4=",
+			"checksumSHA1": "hpHGpvMS8rLNwPABO03G1UZqlFk=",
 			"path": "github.com/ncodes/patchain/cockroach",
-			"revision": "ad9ea4daed450120102475c017fc882b00b120c1",
-			"revisionTime": "2017-05-26T12:46:23Z"
+			"revision": "535007bacddd2ca7adb88cbddf5d308137ed5f2a",
+			"revisionTime": "2017-05-27T19:59:54Z"
 		},
 		{
 			"checksumSHA1": "erY4WOB5VS6q6BFQGRhvgCnJlYY=",
 			"path": "github.com/ncodes/patchain/cockroach/tables",
-			"revision": "ad9ea4daed450120102475c017fc882b00b120c1",
-			"revisionTime": "2017-05-26T12:46:23Z"
+			"revision": "535007bacddd2ca7adb88cbddf5d308137ed5f2a",
+			"revisionTime": "2017-05-27T19:59:54Z"
 		},
 		{
-			"checksumSHA1": "RiGP0lfW55HyaLyc78FBjMyVT/A=",
+			"checksumSHA1": "kAcGzEO3dz+TvzpRymAdWo8GQQY=",
 			"path": "github.com/ncodes/patchain/object",
-			"revision": "ad9ea4daed450120102475c017fc882b00b120c1",
-			"revisionTime": "2017-05-26T12:46:23Z"
+			"revision": "535007bacddd2ca7adb88cbddf5d308137ed5f2a",
+			"revisionTime": "2017-05-27T19:59:54Z"
 		},
 		{
 			"checksumSHA1": "H13GerMtrITJWBV8Fgo2ONusNKQ=",
@@ -805,5 +803,5 @@
 			"revisionTime": "2017-02-08T14:18:51Z"
 		}
 	],
-	"rootPath": "github.com/ncodes/bifrost"
+	"rootPath": "github.com/ncodes/safehold"
 }

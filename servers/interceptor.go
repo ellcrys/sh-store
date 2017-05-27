@@ -11,8 +11,8 @@ import (
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
-	"github.com/ncodes/safehold/core/servers/oauth"
 	"github.com/ncodes/safehold/servers/common"
+	"github.com/ncodes/safehold/servers/oauth"
 	"golang.org/x/net/context"
 )
 
