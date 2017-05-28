@@ -87,7 +87,11 @@ func (s *Session) SendOp(id string, op *Op) error {
 		<-op.Done
 	}
 
-	return nil
+	if op.Error != nil {
+		return op.Error
+	}
+
+	return agent.Error
 }
 
 // Stop all active sessions
