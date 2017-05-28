@@ -58,10 +58,6 @@ message Object {
     int64 timestamp = 9        [(gogoproto.jsontag) = "timestamp,omitempty", (gogoproto.moretags) = 'structs:"timestamp,omitempty" mapstructure:"timestamp,omitempty"'];
     string prevHash = 10       [(gogoproto.jsontag) = "prev_hash,omitempty", (gogoproto.moretags) = 'structs:"prevHash,omitempty" mapstructure:"prevHash,omitempty"'];
     string hash = 11           [(gogoproto.jsontag) = "hash,omitempty", (gogoproto.moretags) = 'structs:"hash,omitempty" mapstructure:"hash,omitempty"'];
-    Refs Refs = 12              [(gogoproto.jsontag) = "refs,omitempty", (gogoproto.moretags) = 'structs:"refs,omitempty" mapstructure:"refs,omitempty"'];
-}
-
-message Refs {
     string ref1 = 12           [(gogoproto.jsontag) = "ref1,omitempty", (gogoproto.moretags) = 'structs:"ref1,omitempty" mapstructure:"ref1,omitempty"'];
     string ref2 = 13           [(gogoproto.jsontag) = "ref2,omitempty", (gogoproto.moretags) = 'structs:"ref2,omitempty" mapstructure:"ref2,omitempty"'];
     string ref3 = 14           [(gogoproto.jsontag) = "ref3,omitempty", (gogoproto.moretags) = 'structs:"ref3,omitempty" mapstructure:"ref3,omitempty"'];
