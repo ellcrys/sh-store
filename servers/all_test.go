@@ -229,6 +229,12 @@ func TestRPC(t *testing.T) {
 			})
 		})
 
+		Convey(".makeDBSessionID", func() {
+			Convey("Should return session id in the format: [identityID].[sessionID]", func() {
+				So(makeDBSessionID("some_id", "some_id"), ShouldEqual, "some_id.some_id")
+			})
+		})
+
 		Convey(".CreateDBSession", func() {
 			Convey("Should successfully create a session", func() {
 				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
@@ -237,9 +243,9 @@ func TestRPC(t *testing.T) {
 				}
 				req, err := rpcServer.CreateDBSession(ctx, session)
 				So(err, ShouldBeNil)
-				So(req, ShouldResemble, session)
+				So(req.ID, ShouldEqual, makeDBSessionID("some_id", "some_id"))
 
-				So(rpcServer.dbSession.HasSession(session.ID), ShouldEqual, true)
+				So(rpcServer.dbSession.HasSession(makeDBSessionID("some_id", session.ID)), ShouldEqual, true)
 
 				item, err := consulReg.Get(session.ID)
 				So(err, ShouldBeNil)
@@ -268,7 +274,7 @@ func TestRPC(t *testing.T) {
 				}
 				res, err := rpcServer.CreateDBSession(ctx, session)
 				So(err, ShouldBeNil)
-				So(res, ShouldResemble, session)
+				So(res.ID, ShouldEqual, makeDBSessionID("some_id", "some_id"))
 
 				res, err = rpcServer.GetDBSession(ctx, session)
 				So(err, ShouldBeNil)
