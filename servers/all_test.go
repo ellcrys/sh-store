@@ -66,6 +66,7 @@ func TestRPC(t *testing.T) {
 		t.Fatalf("failed to connect consul registry. %s", err)
 	}
 
+	rpcServer.sessionReg = consulReg
 	rpcServer.dbSession = db.NewSession(consulReg)
 	rpcServer.dbSession.SetDB(rpcServer.db)
 
@@ -225,6 +226,53 @@ func TestRPC(t *testing.T) {
 					So(err, ShouldBeNil)
 					So(len(resp.Data), ShouldEqual, 1)
 				})
+			})
+		})
+
+		Convey(".CreateDBSession", func() {
+			Convey("Should successfully create a session", func() {
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+				session := &proto_rpc.DBSession{
+					ID: "some_id",
+				}
+				req, err := rpcServer.CreateDBSession(ctx, session)
+				So(err, ShouldBeNil)
+				So(req, ShouldResemble, session)
+
+				So(rpcServer.dbSession.HasSession(session.ID), ShouldEqual, true)
+
+				item, err := consulReg.Get(session.ID)
+				So(err, ShouldBeNil)
+				So(item, ShouldNotBeNil)
+				So(item.SID, ShouldEqual, session.ID)
+			})
+		})
+
+		Convey(".GetDBSession", func() {
+
+			Convey("Should return `session not found` error if session does not exist", func() {
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+				session := &proto_rpc.DBSession{
+					ID: "unknown_id",
+				}
+				res, err := rpcServer.GetDBSession(ctx, session)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, `{"Message":"session not found","Errors":{"errors":[{"status":"404","message":"session not found"}]},"StatusCode":404}`)
+				So(res, ShouldBeNil)
+			})
+
+			Convey("Should successfully get a session", func() {
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+				session := &proto_rpc.DBSession{
+					ID: "some_id",
+				}
+				res, err := rpcServer.CreateDBSession(ctx, session)
+				So(err, ShouldBeNil)
+				So(res, ShouldResemble, session)
+
+				res, err = rpcServer.GetDBSession(ctx, session)
+				So(err, ShouldBeNil)
+				So(res.ID, ShouldEqual, session.ID)
 			})
 		})
 	})
