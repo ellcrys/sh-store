@@ -101,18 +101,11 @@ func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 		if err == db.ErrNotFound {
 			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
 		}
-		fmt.Println("> 0", err)
 		return nil, common.ServerError
-	}
-
-	// ensure authenticated developer has owns the session
-	if session.Meta["identity"] == nil || session.Meta["identity"].(string) != developerID {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you do not have access to this session", nil)
 	}
 
 	client, err := grpc.Dial(net.JoinHostPort(session.Address, strconv.Itoa(session.Port)), grpc.WithInsecure())
 	if err != nil {
-		fmt.Println("> 1", err)
 		return nil, common.ServerError
 	}
 
