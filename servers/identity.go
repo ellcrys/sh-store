@@ -29,11 +29,16 @@ func validateIdentity(req *proto_rpc.CreateIdentityMsg) []common.Error {
 	return errs
 }
 
-// GetSystemIdentity fetches the system identity
-func (s *RPC) GetSystemIdentity() (*tables.Object, error) {
-	return s.object.GetLast(&tables.Object{
-		Key: object.MakeIdentityKey(systemEmail),
-	})
+// getSystemIdentity returns system identity or a response error
+func (s *RPC) getSystemIdentity() (*tables.Object, error) {
+	obj, err := s.object.GetLast(&tables.Object{Key: object.MakeIdentityKey(systemEmail)})
+	if err != nil {
+		if err == patchain.ErrNotFound {
+			return nil, common.NewSingleAPIErr(400, "", "", "system identity not found", nil)
+		}
+		return nil, common.ServerError
+	}
+	return obj, nil
 }
 
 // CreateIdentity creates a new identity for object
@@ -44,13 +49,10 @@ func (s *RPC) CreateIdentity(ctx context.Context, req *proto_rpc.CreateIdentityM
 		return nil, common.NewMultiAPIErr(400, "validation errors", errs)
 	}
 
-	systemIdentity, err := s.GetSystemIdentity()
+	systemIdentity, err := s.getSystemIdentity()
 	if err != nil {
 		logRPC.Errorf("%+v", err)
-		if err == patchain.ErrNotFound {
-			return nil, common.NewSingleAPIErr(400, "", "", "system identity not found", nil)
-		}
-		return nil, common.ServerError
+		return nil, err
 	}
 
 	objHandler := object.NewObject(s.db)
