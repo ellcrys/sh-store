@@ -38,10 +38,11 @@ var (
 
 // RPC defines structure for the RPC server
 type RPC struct {
-	server    *grpc.Server
-	db        patchain.DB
-	dbSession *db.Session
-	object    *object.Object
+	server     *grpc.Server
+	db         patchain.DB
+	dbSession  *db.Session
+	object     *object.Object
+	sessionReg db.SessionRegistry
 }
 
 // NewRPC creates a new RPC server
@@ -87,7 +88,7 @@ func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 		}
 
 		// connect to session registory
-		sessionReg, err := db.NewConsulRegistry()
+		s.sessionReg, err = db.NewConsulRegistry()
 		if err != nil {
 			log.Errorf("%v", err)
 			s.Stop()
@@ -95,7 +96,7 @@ func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 		}
 
 		// create db session manager
-		s.dbSession = db.NewSession(sessionReg)
+		s.dbSession = db.NewSession(s.sessionReg)
 		s.dbSession.SetDB(s.db)
 
 		startedCB(s)

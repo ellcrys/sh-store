@@ -6,6 +6,7 @@ service API {
     rpc CreateIdentity(CreateIdentityMsg) returns (ObjectResponse);
     rpc CreateObjects(CreateObjectsMsg) returns (MultiObjectResponse);
     rpc CreateDBSession(DBSession) returns (DBSession);
+    rpc GetDBSession(DBSession) returns (DBSession);
 }
 
 // DBSession represents a database session request body
