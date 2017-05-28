@@ -56,7 +56,8 @@ func (s *HTTP) getRouter() *mux.Router {
 	g.HandleFunc("/objects", common.EasyHandle(http.MethodPost, s.createObjects))
 	g.HandleFunc("/objects/get", common.EasyHandle(http.MethodPost, s.query))
 	g.HandleFunc("/sessions", common.EasyHandle(http.MethodPost, s.createSession))
-	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodGet, s.getSession))
+	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodGet, s.getSession)).Methods(http.MethodGet)
+	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodDelete, s.deleteSession)).Methods(http.MethodDelete)
 
 	return r
 }
@@ -128,7 +129,7 @@ func (s *HTTP) createSession(w http.ResponseWriter, r *http.Request) (interface{
 	return resp, 201
 }
 
-// getSession creates a new session
+// getSession gets a new session
 func (s *HTTP) getSession(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
 	var resp *proto_rpc.DBSession
@@ -141,6 +142,30 @@ func (s *HTTP) getSession(w http.ResponseWriter, r *http.Request) (interface{}, 
 		}
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.GetDBSession(ctx, &proto_rpc.DBSession{
+			ID: mux.Vars(r)["id"],
+		})
+		return err
+	}); err != nil {
+		logHTTP.Errorf("%+v", err)
+		return err, 0
+	}
+
+	return resp, 201
+}
+
+// deleteSession deletes a session
+func (s *HTTP) deleteSession(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+	var err error
+	var resp *proto_rpc.DBSession
+
+	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
+		var md metadata.MD
+		authorization := r.Header.Get("Authorization")
+		if len(authorization) > 0 {
+			md = metadata.Pairs("authorization", authorization)
+		}
+		ctx := metadata.NewContext(context.Background(), md)
+		resp, err = client.DeleteDBSession(ctx, &proto_rpc.DBSession{
 			ID: mux.Vars(r)["id"],
 		})
 		return err

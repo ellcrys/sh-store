@@ -40,6 +40,7 @@ import (
 	spin "github.com/ncodes/go-spin"
 	"github.com/ncodes/mapstructure"
 	"github.com/satori/go.uuid"
+	context2 "golang.org/x/net/context"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -842,4 +843,38 @@ func OnTerminate(f func(s os.Signal)) {
 		s := <-sigs
 		f(s)
 	}()
+}
+
+// FromMD gets a metadata field from a context of metadata.MD
+func FromMD(d interface{}, key string) string {
+	var md metadata.MD
+	switch _d := d.(type) {
+	case context2.Context:
+		md, _ = metadata.FromOutgoingContext(_d)
+	case metadata.MD:
+		md = _d
+	default:
+		panic(fmt.Errorf("unexpected value type"))
+	}
+	if md[key] == nil {
+		return ""
+	}
+	return md[key][0]
+}
+
+// FromIncomingMD gets a metadata field from a context's incoming metadata
+func FromIncomingMD(d interface{}, key string) string {
+	var md metadata.MD
+	switch _d := d.(type) {
+	case context2.Context:
+		md, _ = metadata.FromIncomingContext(_d)
+	case metadata.MD:
+		md = _d
+	default:
+		panic(fmt.Errorf("unexpected value type"))
+	}
+	if md[key] == nil {
+		return ""
+	}
+	return md[key][0]
 }

@@ -13,18 +13,16 @@ import (
 	"github.com/ncodes/patchain/object"
 	"github.com/ncodes/safehold/servers/common"
 	"github.com/ncodes/safehold/servers/oauth"
+	"github.com/ncodes/safehold/types"
 	"golang.org/x/net/context"
 )
 
-// CtxKey is used as key when defining values in a context
-type CtxKey string
-
 var (
 	// CtxIdentity represents an authenticated identity
-	CtxIdentity CtxKey = "identity"
+	CtxIdentity types.CtxKey = "identity"
 
 	// CtxTokenClaims represents claims in an auth token
-	CtxTokenClaims CtxKey = "token_claims"
+	CtxTokenClaims types.CtxKey = "token_claims"
 
 	// ErrInvalidToken represents a error about an invalid token
 	ErrInvalidToken = fmt.Errorf("permission denied. Invalid token")
@@ -41,6 +39,7 @@ var (
 		"/proto_rpc.API/CreateObjects",
 		"/proto_rpc.API/CreateDBSession",
 		"/proto_rpc.API/GetDBSession",
+		"/proto_rpc.API/DeleteDBSession",
 	}
 )
 

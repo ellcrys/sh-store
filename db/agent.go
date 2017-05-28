@@ -28,7 +28,7 @@ var (
 	OpGetObjects OpType = 4
 
 	// MaxSessionIdleTime is the maximum duration a session can be idle before stopping
-	MaxSessionIdleTime = 10 * time.Second
+	MaxSessionIdleTime = 10 * time.Minute
 )
 
 // Op represents an agent operation

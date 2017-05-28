@@ -128,6 +128,7 @@ func (s *Session) RemoveAgent(id string) {
 	if s.HasSession(id) {
 		s.GetAgent(id).Stop()
 		s.removeAgentRef(id)
+		s.sessionReg.Del(id) // delete from session registry
 	}
 }
 
@@ -161,8 +162,7 @@ func (s *Session) CreateSession(id, identityID string) (string, error) {
 	msgChan := make(chan *Op)
 	agent := NewAgent(s.db, msgChan)
 	go agent.Begin(func() { // on stop
-		s.RemoveAgent(id)    // remove agent
-		s.sessionReg.Del(id) // delete from session registry
+		s.RemoveAgent(id) // remove agent
 	})
 
 	s.Lock()
