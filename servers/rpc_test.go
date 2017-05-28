@@ -60,7 +60,13 @@ func TestRPC(t *testing.T) {
 	}
 
 	rpcServer := NewRPC(cdb)
-	rpcServer.dbSession = db.NewSession(conStrWithDB)
+
+	consulReg, err := db.NewConsulRegistry()
+	if err != nil {
+		t.Fatalf("failed to connect consul registry. %s", err)
+	}
+
+	rpcServer.dbSession = db.NewSession(consulReg)
 	rpcServer.dbSession.SetDB(rpcServer.db)
 
 	Convey("TestIdentity", t, func() {

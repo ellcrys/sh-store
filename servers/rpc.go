@@ -86,8 +86,16 @@ func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 			return
 		}
 
+		// connect to session registory
+		sessionReg, err := db.NewConsulRegistry()
+		if err != nil {
+			log.Errorf("%v", err)
+			s.Stop()
+			return
+		}
+
 		// create db session manager
-		s.dbSession = db.NewSession(partitionChainConStr)
+		s.dbSession = db.NewSession(sessionReg)
 		s.dbSession.SetDB(s.db)
 
 		startedCB(s)

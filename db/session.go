@@ -2,42 +2,51 @@ package db
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 
 	"sync"
 
 	"github.com/ellcrys/util"
 	"github.com/ncodes/patchain"
+	"github.com/pkg/errors"
 )
 
 var (
 	maxOpenConnection = 10
 	maxIdleConnection = 5
+
+	// nodePort is the port to the running RPC service
+	nodePort int
 )
+
+func init() {
+}
+
+func getNodeAddr() (string, int, error) {
+	nodeAddr := "127.0.0.1"
+	_, nodePort, err := net.SplitHostPort(util.Env("SH_RPC_ADDR", "localhost:9002"))
+	if err != nil {
+		return "", 0, errors.Wrap(err, "failed to split rpc addr")
+	}
+	port, _ := strconv.Atoi(nodePort)
+	return nodeAddr, port, err
+}
 
 // Session defines a structure for a partition chain session manager
 type Session struct {
 	sync.Mutex
-	ConnectionString string
-	db               patchain.DB
-	agents           map[string]*Agent
+	db         patchain.DB
+	agents     map[string]*Agent
+	sessionReg SessionRegistry
 }
 
 // NewSession creates a new partition chain session
-func NewSession(conStr string) *Session {
+func NewSession(sessionReg SessionRegistry) *Session {
 	return &Session{
-		ConnectionString: conStr,
-		agents:           make(map[string]*Agent),
+		agents:     make(map[string]*Agent),
+		sessionReg: sessionReg,
 	}
-}
-
-// Connect creates a connection to the partition chain database
-func (s *Session) Connect(db patchain.DB) (err error) {
-	err = db.Connect(maxOpenConnection, maxIdleConnection)
-	if err != nil {
-		return err
-	}
-	s.db = db
-	return
 }
 
 // SetDB sets the db connection to use directly
@@ -141,27 +150,47 @@ func (s *Session) RollbackEnd(id string) {
 }
 
 // CreateSession creates a new session agent
-func (s *Session) CreateSession(id string) string {
+func (s *Session) CreateSession(id, identityID string) (string, error) {
 
 	if id == "" {
 		id = util.UUID4()
-	}
-
-	if s.db == nil {
-		panic("not connected to database")
 	}
 
 	// create the new session agent, start it on a goroutine
 	// and save a reference to it.
 	msgChan := make(chan *Op)
 	agent := NewAgent(s.db, msgChan)
-	go agent.Begin(func() {
-		s.RemoveAgent(id)
+	go agent.Begin(func() { // on stop
+		s.RemoveAgent(id)    // remove agent
+		s.sessionReg.Del(id) // delete from session registry
 	})
 
 	s.Lock()
 	s.agents[id] = agent
 	s.Unlock()
 
-	return id
+	if err := s.registerSession(id, identityID); err != nil {
+		s.RemoveAgent(id)
+		return "", fmt.Errorf("failed to register session")
+	}
+
+	return id, nil
+}
+
+// registerSessionService register the session with the session registry
+func (s *Session) registerSession(sid string, identityID string) error {
+
+	addr, port, err := getNodeAddr()
+	if err != nil {
+		return err
+	}
+
+	return s.sessionReg.Add(RegItem{
+		Address: addr,
+		Port:    port,
+		SID:     sid,
+		Meta: map[string]interface{}{
+			"identity": identityID,
+		},
+	})
 }

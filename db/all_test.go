@@ -56,6 +56,11 @@ func TestAgent(t *testing.T) {
 		t.Fatalf("failed to create tables. %s", err)
 	}
 
+	sessionReg, err := NewConsulRegistry()
+	if err != nil {
+		t.Fatalf("failed to connect to session registry")
+	}
+
 	Convey("TestAgent", t, func() {
 		Convey(".put", func() {
 			Convey("Should return error if Begin() has not been called", func() {
@@ -104,16 +109,8 @@ func TestAgent(t *testing.T) {
 	})
 
 	Convey("TestSession", t, func() {
-		session := NewSession(conStrWithDB)
-		Convey(".Connect", func() {
-			Convey("Should connect successfully", func() {
-				err := session.Connect(cdb)
-				So(err, ShouldBeNil)
-			})
-		})
-
 		Convey(".SetDB", func() {
-			session := NewSession(conStrWithDB)
+			session := NewSession(sessionReg)
 			So(session.db, ShouldBeNil)
 			session.SetDB(cdb)
 			So(session.db, ShouldNotBeNil)
@@ -122,20 +119,13 @@ func TestAgent(t *testing.T) {
 
 		Convey(".CreateSession", func() {
 
-			Convey("Should panic if session object is not connected to a database", func() {
-				session := NewSession(conStrWithDB)
-				sid := "abc"
-				So(func() {
-					session.CreateSession(sid)
-				}, ShouldPanicWith, "not connected to database")
-			})
-
 			Convey("Should successfully create a session agent", func() {
-				session := NewSession(conStrWithDB)
+				session := NewSession(sessionReg)
 				session.SetDB(cdb)
 				sid := "abc"
 				MaxSessionIdleTime = 5 * time.Second
-				sid = session.CreateSession(sid)
+				sid, err := session.CreateSession(sid, "")
+				So(err, ShouldBeNil)
 				So(sid, ShouldNotBeEmpty)
 				So(sid, ShouldEqual, sid)
 
@@ -172,9 +162,10 @@ func TestAgent(t *testing.T) {
 
 					Convey("Should remove session reference when session exits", func() {
 						MaxSessionIdleTime = 1 * time.Second
-						sid := session.CreateSession("abcd")
+						sid, err := session.CreateSession("abcd", "")
+						So(err, ShouldBeNil)
 						So(session.HasSession(sid), ShouldEqual, true)
-						time.Sleep(2 * time.Second)
+						time.Sleep(3 * time.Second)
 						So(session.HasSession(sid), ShouldEqual, false)
 					})
 				})

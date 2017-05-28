@@ -80,7 +80,11 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	}
 
 	// create new session
-	sessionID := s.dbSession.CreateSession(util.UUID4())
+	sessionID, err := s.dbSession.CreateSession(util.UUID4(), developerID)
+	if err != nil {
+		logRPC.Error("%+v", err)
+		return nil, common.NewSingleAPIErr(500, "", "", "session not created", nil)
+	}
 
 	// send objects to the session
 	var objs []*tables.Object
