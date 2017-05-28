@@ -2,11 +2,11 @@ package servers
 
 import (
 	val "github.com/asaskevich/govalidator"
-	"github.com/ncodes/safehold/servers/common"
-	"github.com/ncodes/safehold/servers/proto_rpc"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
+	"github.com/ncodes/safehold/servers/common"
+	"github.com/ncodes/safehold/servers/proto_rpc"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/net/context"
 )
