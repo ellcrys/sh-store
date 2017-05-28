@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	"github.com/ellcrys/util"
-	"github.com/ncodes/safehold/servers/common"
-	"github.com/ncodes/safehold/servers/proto_rpc"
 	"github.com/ncodes/patchain/cockroach"
 	"github.com/ncodes/patchain/object"
+	"github.com/ncodes/safehold/db"
+	"github.com/ncodes/safehold/servers/common"
+	"github.com/ncodes/safehold/servers/proto_rpc"
 	"github.com/op/go-logging"
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -59,6 +60,8 @@ func TestRPC(t *testing.T) {
 	}
 
 	rpcServer := NewRPC(cdb)
+	rpcServer.dbSession = db.NewSession(conStrWithDB)
+	rpcServer.dbSession.SetDB(rpcServer.db)
 
 	Convey("TestIdentity", t, func() {
 
