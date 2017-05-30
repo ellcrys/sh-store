@@ -1,4 +1,4 @@
-package db
+package session
 
 import (
 	"fmt"
@@ -152,6 +152,19 @@ func (s *Session) RollbackEnd(id string) {
 
 // CreateSession creates a new session agent
 func (s *Session) CreateSession(id, identityID string) (string, error) {
+	return s.createSession(id, identityID, true)
+}
+
+// CreateUnregisteredSession creates a session that is not registered
+func (s *Session) CreateUnregisteredSession(id, identityID string) (sid string) {
+	sid, _ = s.createSession(id, identityID, false)
+	return
+}
+
+// createSession creates a new session. It will generate an id if
+// id param is not empty and will only register the session on the registry
+// if registered is true.
+func (s *Session) createSession(id, identityID string, registered bool) (string, error) {
 
 	if id == "" {
 		id = util.UUID4()
@@ -160,7 +173,7 @@ func (s *Session) CreateSession(id, identityID string) (string, error) {
 	// create the new session agent, start it on a goroutine
 	// and save a reference to it.
 	msgChan := make(chan *Op)
-	agent := NewAgent(s.db, msgChan)
+	agent := NewAgent(s.db.NewDB(), msgChan)
 	go agent.Begin(func() { // on stop
 		s.RemoveAgent(id) // remove agent
 	})
@@ -169,9 +182,11 @@ func (s *Session) CreateSession(id, identityID string) (string, error) {
 	s.agents[id] = agent
 	s.Unlock()
 
-	if err := s.registerSession(id, identityID); err != nil {
-		s.RemoveAgent(id)
-		return "", fmt.Errorf("failed to register session")
+	if registered {
+		if err := s.registerSession(id, identityID); err != nil {
+			s.RemoveAgent(id)
+			return "", fmt.Errorf("failed to register session")
+		}
 	}
 
 	return id, nil
@@ -193,4 +208,39 @@ func (s *Session) registerSession(sid string, identityID string) error {
 			"identity": identityID,
 		},
 	})
+}
+
+// SendQueryOp sends a query operation
+func SendQueryOp(ses *Session, query string, limit int, order string, out interface{}) error {
+	sid := ses.CreateUnregisteredSession(util.UUID4(), util.UUID4())
+	if err := ses.SendOp(sid, &Op{
+		OpType:  OpGetObjects,
+		Data:    query,
+		Done:    make(chan struct{}),
+		Out:     out,
+		Limit:   limit,
+		OrderBy: order,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// SendQueryOpWithSession sends a query operation using an existing session id
+func SendQueryOpWithSession(ses *Session, sid, query string, limit int, order string, out interface{}) error {
+	agent := ses.GetAgent(sid)
+	if agent == nil {
+		return fmt.Errorf("session not found")
+	}
+	if err := ses.SendOp(sid, &Op{
+		OpType:  OpGetObjects,
+		Data:    query,
+		Done:    make(chan struct{}),
+		Out:     out,
+		Limit:   limit,
+		OrderBy: order,
+	}); err != nil {
+		return err
+	}
+	return nil
 }

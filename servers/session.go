@@ -10,9 +10,9 @@ import (
 	"net"
 
 	"github.com/ellcrys/util"
-	"github.com/ncodes/safehold/db"
 	"github.com/ncodes/safehold/servers/common"
 	"github.com/ncodes/safehold/servers/proto_rpc"
+	"github.com/ncodes/safehold/session"
 	"golang.org/x/net/context"
 )
 
@@ -61,7 +61,7 @@ func (s *RPC) GetDBSession(ctx context.Context, req *proto_rpc.DBSession) (*prot
 	// check session registry
 	_, err := s.sessionReg.Get(sessionID)
 	if err != nil {
-		if err == db.ErrNotFound {
+		if err == session.ErrNotFound {
 			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
 		}
 	}
@@ -74,7 +74,7 @@ func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 
 	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
+	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
 
 	if req.ID == "" {
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
@@ -88,33 +88,35 @@ func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 		return req, nil
 	}
 
-	// if checkLocalOnly is true, return error
-	if checkLocalOnly {
+	// if localOnly is true, return error
+	if localOnly {
 		return nil, fmt.Errorf("session not found")
 	}
 
 	// get session from the session registry.
 	// if we find it, we need to call the session's host server to delete.
 	// if not found, return `not found` error
-	session, err := s.sessionReg.Get(sessionID)
+	item, err := s.sessionReg.Get(sessionID)
 	if err != nil {
-		if err == db.ErrNotFound {
+		if err == session.ErrNotFound {
 			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
 		}
 		return nil, common.ServerError
 	}
 
-	client, err := grpc.Dial(net.JoinHostPort(session.Address, strconv.Itoa(session.Port)), grpc.WithInsecure())
+	sessionHostAddr := net.JoinHostPort(item.Address, strconv.Itoa(item.Port))
+	client, err := grpc.Dial(sessionHostAddr, grpc.WithInsecure())
 	if err != nil {
 		return nil, common.ServerError
 	}
+	defer client.Close()
 
 	// make call to the session host server.
 	// include the auth token of the current request
-	// and set check-local-only force the RPC method
+	// and set local-only to force the RPC method
 	// to only check local/in-memory session cache
 	server := proto_rpc.NewAPIClient(client)
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", authorization, "check-local-only", "true"))
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", authorization, "local-only", "true"))
 	resp, err := server.DeleteDBSession(ctx, req)
 	if err != nil {
 		if grpc.ErrorDesc(err) == "session not found" {

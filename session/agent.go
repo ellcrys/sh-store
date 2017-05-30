@@ -1,4 +1,4 @@
-package db
+package session
 
 import (
 	"fmt"
@@ -8,6 +8,7 @@ import (
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
+	"github.com/ncodes/safehold/config"
 	"github.com/pkg/errors"
 )
 
@@ -15,6 +16,8 @@ import (
 type OpType int
 
 var (
+	logAgent = config.MakeLogger("session.agent")
+
 	// OpCommit represents a commit operation
 	OpCommit OpType = 1
 
@@ -54,6 +57,7 @@ type Agent struct {
 	tx         patchain.DB
 	txFinished bool
 	began      bool
+	debug      bool
 }
 
 // NewAgent creates a new agent
@@ -112,6 +116,10 @@ func (a *Agent) get(op *Op, out interface{}) error {
 		return errors.Wrap(err, "failed to generate SQL")
 	}
 
+	if a.debug {
+		logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, op.OrderBy, op.Limit)
+	}
+
 	err = a.tx.GetAll(&tables.Object{
 		QueryParams: patchain.QueryParams{
 			Limit:   op.Limit,
@@ -124,10 +132,15 @@ func (a *Agent) get(op *Op, out interface{}) error {
 	}, out)
 
 	if err != nil {
-		return errors.Wrap(fmt.Errorf("query error: %s", err), "query error")
+		return err
 	}
 
 	return nil
+}
+
+// Debug turns on logging
+func (a *Agent) Debug() {
+	a.debug = true
 }
 
 // newTx creates a new transaction

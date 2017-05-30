@@ -1,7 +1,6 @@
 package servers
 
 import (
-	"fmt"
 	"net"
 	"time"
 
@@ -11,8 +10,8 @@ import (
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
-	"github.com/ncodes/safehold/db"
 	"github.com/ncodes/safehold/servers/proto_rpc"
+	"github.com/ncodes/safehold/session"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 )
@@ -40,23 +39,22 @@ var (
 type RPC struct {
 	server     *grpc.Server
 	db         patchain.DB
-	dbSession  *db.Session
+	dbSession  *session.Session
 	object     *object.Object
-	sessionReg db.SessionRegistry
+	sessionReg session.SessionRegistry
 }
 
 // NewRPC creates a new RPC server
 func NewRPC(db patchain.DB) *RPC {
 	return &RPC{
-		db:     db,
-		object: object.NewObject(db),
+		db: db,
 	}
 }
 
 // Start starts the server. It will bind to the address provided
 func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 
-	lis, err := net.Listen("tcp", fmt.Sprintf("%s", addr))
+	lis, err := net.Listen("tcp", addr)
 	if err != nil {
 		_, port, _ := net.SplitHostPort(addr)
 		logRPC.Infof("failed to listen on port=%s. Err: %s", port, err)
@@ -73,6 +71,8 @@ func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 			return
 		}
 
+		s.object = object.NewObject(s.db.NewDB())
+
 		// create tables if necessary
 		if err := s.db.CreateTables(); err != nil {
 			log.Errorf("%v", err)
@@ -88,7 +88,7 @@ func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 		}
 
 		// connect to session registory
-		s.sessionReg, err = db.NewConsulRegistry()
+		s.sessionReg, err = session.NewConsulRegistry()
 		if err != nil {
 			log.Errorf("%v", err)
 			s.Stop()
@@ -96,7 +96,7 @@ func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 		}
 
 		// create db session manager
-		s.dbSession = db.NewSession(s.sessionReg)
+		s.dbSession = session.NewSession(s.sessionReg)
 		s.dbSession.SetDB(s.db)
 
 		startedCB(s)

@@ -8,6 +8,22 @@ service API {
     rpc CreateDBSession(DBSession) returns (DBSession);
     rpc GetDBSession(DBSession) returns (DBSession);
     rpc DeleteDBSession(DBSession) returns (DBSession);
+    rpc GetObjects(GetObjectMsg) returns (MultiObjectResponse);
+}
+
+// GetObjectMsg represents query parameters for retrieving objects
+message GetObjectMsg {
+    bytes query = 1                 [(gogoproto.jsontag) = "query,omitempty", (gogoproto.moretags) = 'structs:"query,omitempty" mapstructure:"query,omitempty"'];
+    string owner = 2                 [(gogoproto.jsontag) = "owner,omitempty", (gogoproto.moretags) = 'structs:"owner,omitempty" mapstructure:"owner,omitempty"'];
+    string creator = 3               [(gogoproto.jsontag) = "creator,omitempty", (gogoproto.moretags) = 'structs:"creator,omitempty" mapstructure:"creator,omitempty"'];
+    repeated OrderBy order = 4       [(gogoproto.jsontag) = "order,omitempty", (gogoproto.moretags) = 'structs:"order,omitempty" mapstructure:"order,omitempty"'];
+    int32 limit = 5                  [(gogoproto.jsontag) = "limit,omitempty", (gogoproto.moretags) = 'structs:"limit,omitempty" mapstructure:"limit,omitempty"']; 
+}
+
+// OrderBy represents how a field is ordered in a query
+message OrderBy {
+    string field = 1        [(gogoproto.jsontag) = "field,omitempty", (gogoproto.moretags) = 'structs:"field,omitempty" mapstructure:"field,omitempty"'];
+    int32 order = 2         [(gogoproto.jsontag) = "order,omitempty", (gogoproto.moretags) = 'structs:"order,omitempty" mapstructure:"order,omitempty"'];
 }
 
 // DBSession represents a database session request body

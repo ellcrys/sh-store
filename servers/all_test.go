@@ -7,12 +7,15 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/grpc/metadata"
+
 	"github.com/ellcrys/util"
 	"github.com/ncodes/patchain/cockroach"
+	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
-	"github.com/ncodes/safehold/db"
 	"github.com/ncodes/safehold/servers/common"
 	"github.com/ncodes/safehold/servers/proto_rpc"
+	"github.com/ncodes/safehold/session"
 	"github.com/op/go-logging"
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -61,14 +64,15 @@ func TestRPC(t *testing.T) {
 
 	rpcServer := NewRPC(cdb)
 
-	consulReg, err := db.NewConsulRegistry()
+	consulReg, err := session.NewConsulRegistry()
 	if err != nil {
 		t.Fatalf("failed to connect consul registry. %s", err)
 	}
 
 	rpcServer.sessionReg = consulReg
-	rpcServer.dbSession = db.NewSession(consulReg)
+	rpcServer.dbSession = session.NewSession(consulReg)
 	rpcServer.dbSession.SetDB(rpcServer.db)
+	rpcServer.object = object.NewObject(rpcServer.db)
 
 	Convey("TestIdentity", t, func() {
 
@@ -118,7 +122,6 @@ func TestRPC(t *testing.T) {
 					So(err.Error(), ShouldEqual, `{"Message":"Email is not available","Errors":{"errors":[{"status":"400","code":"used_email","field":"email","message":"Email is not available"}]},"StatusCode":400}`)
 				})
 			})
-
 		})
 
 		Convey(".validateObjects", func() {
@@ -160,8 +163,9 @@ func TestRPC(t *testing.T) {
 		Convey(".CreateObject", func() {
 
 			Convey("Should return error if no object is provided", func() {
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
 				req := &proto_rpc.CreateObjectsMsg{}
-				_, err := rpcServer.CreateObjects(context.Background(), req)
+				_, err := rpcServer.CreateObjects(ctx, req)
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, `{"Message":"no object provided. At least one object is required","Errors":{"errors":[{"status":"400","message":"no object provided. At least one object is required"}]},"StatusCode":400}`)
 			})
@@ -175,9 +179,10 @@ func TestRPC(t *testing.T) {
 						{ID: "some_id3"},
 					},
 				}
-				_, err := rpcServer.CreateObjects(context.Background(), req)
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+				_, err := rpcServer.CreateObjects(ctx, req)
 				So(err, ShouldNotBeNil)
-				So(err.Error(), ShouldEqual, `{"Message":"too many objects. Only a maximum of 25 can be created at once","Errors":{"errors":[{"status":"400","message":"too many objects. Only a maximum of 25 can be created at once"}]},"StatusCode":400}`)
+				So(err.Error(), ShouldEqual, `{"Message":"too many objects. Only a maximum of 2 can be created at once","Errors":{"errors":[{"status":"400","message":"too many objects. Only a maximum of 2 can be created at once"}]},"StatusCode":400}`)
 			})
 
 			Convey("With valid owner identity", func() {
@@ -226,6 +231,26 @@ func TestRPC(t *testing.T) {
 					So(err, ShouldBeNil)
 					So(len(resp.Data), ShouldEqual, 1)
 				})
+
+				Convey("With session id", func() {
+
+					partitions, err := object.NewObject(cdb).CreatePartitions(1, owner.ID, owner.ID)
+					So(err, ShouldBeNil)
+					So(len(partitions), ShouldEqual, 1)
+
+					Convey("Should return error if session id is not found in in-memory or session registry", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
+						ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", "unknown"))
+						req := &proto_rpc.CreateObjectsMsg{
+							Objects: []*proto_rpc.Object{
+								{ID: "some_id", OwnerID: owner.ID, Key: "some_key"},
+							},
+						}
+						_, err := rpcServer.CreateObjects(ctx, req)
+						So(err, ShouldNotBeNil)
+						So(err.Error(), ShouldEqual, `{"Message":"session not found","Errors":{"errors":[{"status":"404","message":"session not found"}]},"StatusCode":404}`)
+					})
+				})
 			})
 		})
 
@@ -243,7 +268,7 @@ func TestRPC(t *testing.T) {
 				}
 				req, err := rpcServer.CreateDBSession(ctx, session)
 				So(err, ShouldBeNil)
-				So(req.ID, ShouldEqual, makeDBSessionID("some_id", "some_id"))
+				So(req.ID, ShouldEqual, "some_id")
 
 				So(rpcServer.dbSession.HasSession(makeDBSessionID("some_id", session.ID)), ShouldEqual, true)
 
@@ -274,11 +299,95 @@ func TestRPC(t *testing.T) {
 				}
 				res, err := rpcServer.CreateDBSession(ctx, session)
 				So(err, ShouldBeNil)
-				So(res.ID, ShouldEqual, makeDBSessionID("some_id", "some_id"))
+				So(res.ID, ShouldEqual, "some_id")
 
 				res, err = rpcServer.GetDBSession(ctx, session)
 				So(err, ShouldBeNil)
 				So(res.ID, ShouldEqual, session.ID)
+			})
+		})
+
+		Convey(".DeleteDBSession", func() {
+			Convey("Should return error if session id is not provided", func() {
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+				_, err := rpcServer.DeleteDBSession(ctx, &proto_rpc.DBSession{})
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, `{"Message":"session id is required","Errors":{"errors":[{"status":"400","message":"session id is required"}]},"StatusCode":400}`)
+			})
+
+			Convey("Should return error if session does not exist locally and on the session registry", func() {
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+				_, err := rpcServer.DeleteDBSession(ctx, &proto_rpc.DBSession{ID: "unknown"})
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, `{"Message":"session not found","Errors":{"errors":[{"status":"404","message":"session not found"}]},"StatusCode":404}`)
+			})
+		})
+
+		Convey(".orderByToString", func() {
+			aCase := []*proto_rpc.OrderBy{
+				{Field: "a_field", Order: 0},
+				{Field: "b_field", Order: 1},
+				{Field: "c_field", Order: 0},
+			}
+			actual := orderByToString(aCase)
+			So(actual, ShouldEqual, "a_field desc, b_field asc, c_field desc")
+		})
+
+		Convey(".GetObjects", func() {
+			Convey("With no session id", func() {
+				Convey("Should return error if owner does not exist", func() {
+					ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+					_, err := rpcServer.GetObjects(ctx, &proto_rpc.GetObjectMsg{
+						Owner: "unknown",
+					})
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, `{"Message":"owner not found","Errors":{"errors":[{"status":"404","message":"owner not found"}]},"StatusCode":404}`)
+				})
+
+				Convey("Should return error if creator does not exist", func() {
+					ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+					_, err := rpcServer.GetObjects(ctx, &proto_rpc.GetObjectMsg{
+						Creator: "unknown",
+					})
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, `{"Message":"creator not found","Errors":{"errors":[{"status":"404","message":"creator not found"}]},"StatusCode":404}`)
+				})
+
+				Convey("Should return error if owner is not the same as the developer identity", func() {
+
+					ownerID := util.RandString(10)
+					owner := object.MakeIdentityObject(ownerID, ownerID, util.RandString(5)+"@email.com", "password", true)
+					err := cdb.Create(owner)
+					So(err, ShouldBeNil)
+
+					ctx := context.WithValue(context.Background(), CtxIdentity, "developer_id")
+					_, err = rpcServer.GetObjects(ctx, &proto_rpc.GetObjectMsg{
+						Owner: owner.ID,
+					})
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, `{"Message":"permission denied: you are not authorized to access objects for the owner","Errors":{"errors":[{"status":"401","message":"permission denied: you are not authorized to access objects for the owner"}]},"StatusCode":401}`)
+				})
+
+				Convey("Should successfully get an object", func() {
+
+					ownerID := util.RandString(10)
+					owner := object.MakeIdentityObject(ownerID, ownerID, util.RandString(5)+"@email.com", "password", true)
+					err := cdb.Create(owner)
+					So(err, ShouldBeNil)
+
+					obj := &tables.Object{OwnerID: owner.ID, CreatorID: owner.ID, Key: "a_key"}
+					obj.Init().ComputeHash()
+					err = cdb.Create(obj)
+					So(err, ShouldBeNil)
+					ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
+					resp, err := rpcServer.GetObjects(ctx, &proto_rpc.GetObjectMsg{
+						Query: util.MustStringify(map[string]interface{}{"key": "a_key"}),
+						Owner: owner.ID,
+					})
+					So(err, ShouldBeNil)
+					So(len(resp.Data), ShouldEqual, 1)
+					So(resp.Data[0].ID, ShouldEqual, obj.ID)
+				})
 			})
 		})
 	})

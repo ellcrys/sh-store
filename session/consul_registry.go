@@ -1,4 +1,4 @@
-package db
+package session
 
 import (
 	"github.com/ellcrys/consul/api"

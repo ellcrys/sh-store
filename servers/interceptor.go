@@ -37,6 +37,7 @@ var (
 	// must pass app token authorization checks
 	methodsRequiringAppToken = []string{
 		"/proto_rpc.API/CreateObjects",
+		"/proto_rpc.API/GetObjects",
 		"/proto_rpc.API/CreateDBSession",
 		"/proto_rpc.API/GetDBSession",
 		"/proto_rpc.API/DeleteDBSession",

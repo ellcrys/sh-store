@@ -20,7 +20,7 @@ import (
 )
 
 // blacklistedFields cannot be included in JSQ query
-var blacklistedFields = []string{"creator_id", "partition_id", "JSQ_params", "schema_version"}
+var blacklistedFields = []string{"partition_id", "JSQ_params"}
 
 // DB defines a structure that implements the DB interface
 // to provide database access
@@ -174,6 +174,11 @@ func (c *DB) CreateBulk(objs []interface{}, options ...patchain.Option) error {
 	return nil
 }
 
+// NewDB creates a new connection
+func (c *DB) NewDB() patchain.DB {
+	return &DB{db: c.db.NewScope(nil).NewDB()}
+}
+
 // Begin returns a database object with an active transaction session
 func (c *DB) Begin() patchain.DB {
 	return &DB{db: c.db.NewScope(nil).DB().Begin()}
@@ -224,7 +229,7 @@ func (c *DB) Rollback() error {
 // GetLast gets the last document that matches the query object
 func (c *DB) GetLast(q patchain.Query, out interface{}, options ...patchain.Option) error {
 	dbTx, _ := c.getDBTxFromOption(options, &DB{db: c.db})
-	err := dbTx.GetConn().(*gorm.DB).Scopes(c.getQueryModifiers(q)...).Last(out).Error
+	err := dbTx.GetConn().(*gorm.DB).Scopes(c.getQueryModifiers(q)...).Limit(1).Find(out).Error
 	if err != nil {
 		if common.CompareErr(err, gorm.ErrRecordNotFound) == 0 {
 			return patchain.ErrNotFound
@@ -237,9 +242,14 @@ func (c *DB) GetLast(q patchain.Query, out interface{}, options ...patchain.Opti
 // GetAll fetches all documents that match a query
 func (c *DB) GetAll(q patchain.Query, out interface{}, options ...patchain.Option) error {
 	dbTx, _ := c.getDBTxFromOption(options, &DB{db: c.db})
-	return dbTx.GetConn().(*gorm.DB).
-		Scopes(c.getQueryModifiers(q)...).
-		Find(out).Error
+	err := dbTx.GetConn().(*gorm.DB).Scopes(c.getQueryModifiers(q)...).Find(out).Error
+	if err != nil {
+		if common.CompareErr(err, gorm.ErrRecordNotFound) == 0 {
+			return patchain.ErrNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 // Count returns a count of the number of documents that matches the query
@@ -252,7 +262,7 @@ func (c *DB) Count(q patchain.Query, out *int64, options ...patchain.Option) err
 }
 
 // getQueryModifiers applies the query parameters
-// associated with query object to the db connection
+// associated with query object to the db connection.
 func (c *DB) getQueryModifiers(q patchain.Query) []func(*gorm.DB) *gorm.DB {
 
 	var modifiers []func(*gorm.DB) *gorm.DB
@@ -279,10 +289,6 @@ func (c *DB) getQueryModifiers(q patchain.Query) []func(*gorm.DB) *gorm.DB {
 			return conn.Where("key LIKE ?", qp.KeyStartsWith+"%")
 		})
 	}
-
-	modifiers = append(modifiers, func(conn *gorm.DB) *gorm.DB {
-		return conn.Order("timestamp desc")
-	})
 
 	if len(qp.OrderBy) > 0 {
 		modifiers = append(modifiers, func(conn *gorm.DB) *gorm.DB {

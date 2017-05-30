@@ -3,19 +3,17 @@ package servers
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
 	"net/http"
 	"time"
 
 	"net"
 
-	"fmt"
-
+	"github.com/ellcrys/util"
 	"github.com/gorilla/mux"
+	"github.com/jinzhu/copier"
 	"github.com/labstack/gommon/log"
 	"github.com/ncodes/cocoon/core/config"
 	"github.com/ncodes/patchain"
-	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/safehold/servers/common"
 	"github.com/ncodes/safehold/servers/oauth"
 	"github.com/ncodes/safehold/servers/proto_rpc"
@@ -53,11 +51,11 @@ func (s *HTTP) getRouter() *mux.Router {
 
 	// v1 endpoints
 	g.HandleFunc("/identities", common.EasyHandle(http.MethodPost, s.createIdentity))
-	g.HandleFunc("/objects", common.EasyHandle(http.MethodPost, s.createObjects))
-	g.HandleFunc("/objects/get", common.EasyHandle(http.MethodPost, s.query))
 	g.HandleFunc("/sessions", common.EasyHandle(http.MethodPost, s.createSession))
 	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodGet, s.getSession)).Methods(http.MethodGet)
 	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodDelete, s.deleteSession)).Methods(http.MethodDelete)
+	g.HandleFunc("/objects", common.EasyHandle(http.MethodPost, s.createObjects)).Methods(http.MethodPost)
+	g.HandleFunc("/objects/query", common.EasyHandle(http.MethodPost, s.getObjects)).Methods(http.MethodPost)
 
 	return r
 }
@@ -211,11 +209,13 @@ func (s *HTTP) createObjects(w http.ResponseWriter, r *http.Request) (interface{
 		return common.BodyMalformedError, 400
 	}
 
+	var sessionID = r.URL.Query().Get("session")
+
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		var md metadata.MD
+		var md = metadata.Join(metadata.Pairs("session_id", sessionID))
 		authorization := r.Header.Get("Authorization")
 		if len(authorization) > 0 {
-			md = metadata.Pairs("authorization", authorization)
+			md = metadata.Join(md, metadata.Pairs("authorization", authorization))
 		}
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Objects: body})
@@ -228,30 +228,69 @@ func (s *HTTP) createObjects(w http.ResponseWriter, r *http.Request) (interface{
 	return resp, 201
 }
 
-// query performs query operations
-func (s *HTTP) query(w http.ResponseWriter, r *http.Request) (interface{}, int) {
-	jsq := s.db.NewQuery()
-	b, _ := ioutil.ReadAll(r.Body)
-	err := jsq.Parse(string(b))
-	if err != nil {
-		return err, 400
-	}
-	sql, args, err := jsq.ToSQL()
-	if err != nil {
-		return err, 400
-	}
-	var out []tables.Object
-	err = s.db.GetAll(&tables.Object{
-		QueryParams: patchain.QueryParams{
-			Expr: patchain.Expr{
-				Expr: sql,
-				Args: args,
-			},
-		},
-	}, &out)
-	if err != nil {
-		return fmt.Errorf("all: %s", err), 400
+// getObjects performs query operations
+func (s *HTTP) getObjects(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+	var err error
+	var resp *proto_rpc.MultiObjectResponse
+	var rpcBody proto_rpc.GetObjectMsg
+	var body struct {
+		Query   map[string]interface{} `json:"query"`
+		Owner   string                 `json:"owner"`
+		Creator string                 `json:"creator"`
+		Limit   int32                  `json:"limit"`
+		Order   []struct {
+			Field string `json:"field"`
+			Order int32  `json:"order"`
+		} `json:"order"`
 	}
 
-	return out, 200
+	if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return common.BodyMalformedError, 400
+	}
+
+	copier.Copy(&rpcBody, body)
+	rpcBody.Query = util.MustStringify(body.Query)
+
+	var sessionID = r.URL.Query().Get("session")
+
+	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
+		var md = metadata.Join(metadata.Pairs("session_id", sessionID))
+		authorization := r.Header.Get("Authorization")
+		if len(authorization) > 0 {
+			md = metadata.Join(md, metadata.Pairs("authorization", authorization))
+		}
+		ctx := metadata.NewContext(context.Background(), md)
+		resp, err = client.GetObjects(ctx, &rpcBody)
+		return err
+	}); err != nil {
+		log.Errorf("%+v", err)
+		return err, 0
+	}
+
+	return resp, 200
+
+	// jsq := s.db.NewQuery()
+	// b, _ := ioutil.ReadAll(r.Body)
+	// err := jsq.Parse(string(b))
+	// if err != nil {
+	// 	return err, 400
+	// }
+	// sql, args, err := jsq.ToSQL()
+	// if err != nil {
+	// 	return err, 400
+	// }
+	// var out []tables.Object
+	// err = s.db.GetAll(&tables.Object{
+	// 	QueryParams: patchain.QueryParams{
+	// 		Expr: patchain.Expr{
+	// 			Expr: sql,
+	// 			Args: args,
+	// 		},
+	// 	},
+	// }, &out)
+	// if err != nil {
+	// 	return fmt.Errorf("all: %s", err), 400
+	// }
+
+	// return out, 200
 }

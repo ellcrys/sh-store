@@ -168,7 +168,7 @@ func (o *Object) selectPartition(partitions []*tables.Object) *tables.Object {
 	} else if len(partitions) == 1 {
 		return partitions[0]
 	} else {
-		return partitions[util.RandNum(0, len(partitions))]
+		return partitions[util.RandNum(0, len(partitions)-1)]
 	}
 }
 
