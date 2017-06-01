@@ -36,6 +36,7 @@ var (
 	// methodsRequiringAppToken includes the full method name of methods that
 	// must pass app token authorization checks
 	methodsRequiringAppToken = []string{
+		"/proto_rpc.API/GetIdentity",
 		"/proto_rpc.API/CreateObjects",
 		"/proto_rpc.API/GetObjects",
 		"/proto_rpc.API/CreateDBSession",

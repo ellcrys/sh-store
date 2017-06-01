@@ -10,6 +10,12 @@ service API {
     rpc DeleteDBSession(DBSession) returns (DBSession);
     rpc GetObjects(GetObjectMsg) returns (MultiObjectResponse);
     rpc CountObjects(GetObjectMsg) returns (ObjectCountResponse);
+    rpc GetIdentity(GetIdentityMsg) returns (ObjectResponse);
+}
+
+// GetIdentityMsg represents an identity request message
+message GetIdentityMsg {
+    string ID = 1   [(gogoproto.jsontag) = "id,omitempty", (gogoproto.moretags) = 'structs:"id,omitempty" mapstructure:"id,omitempty"'];
 }
 
 // ObjectCountResponse represents object counts 
@@ -19,7 +25,7 @@ message ObjectCountResponse {
 
 // GetObjectMsg represents query parameters for retrieving objects
 message GetObjectMsg {
-    bytes query = 1                 [(gogoproto.jsontag) = "query,omitempty", (gogoproto.moretags) = 'structs:"query,omitempty" mapstructure:"query,omitempty"'];
+    bytes query = 1                  [(gogoproto.jsontag) = "query,omitempty", (gogoproto.moretags) = 'structs:"query,omitempty" mapstructure:"query,omitempty"'];
     string owner = 2                 [(gogoproto.jsontag) = "owner,omitempty", (gogoproto.moretags) = 'structs:"owner,omitempty" mapstructure:"owner,omitempty"'];
     string creator = 3               [(gogoproto.jsontag) = "creator,omitempty", (gogoproto.moretags) = 'structs:"creator,omitempty" mapstructure:"creator,omitempty"'];
     repeated OrderBy order = 4       [(gogoproto.jsontag) = "order,omitempty", (gogoproto.moretags) = 'structs:"order,omitempty" mapstructure:"order,omitempty"'];

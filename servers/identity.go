@@ -114,3 +114,19 @@ func (s *RPC) CreateIdentity(ctx context.Context, req *proto_rpc.CreateIdentityM
 	resp, _ := NewObjectResponse("identity", newIdentity, nil)
 	return resp, nil
 }
+
+// GetIdentity fetches an identity object
+func (s *RPC) GetIdentity(ctx context.Context, req *proto_rpc.GetIdentityMsg) (*proto_rpc.ObjectResponse, error) {
+
+	objHandler := object.NewObject(s.db)
+
+	identity, err := objHandler.GetLast(&tables.Object{Key: object.MakeIdentityKey(req.ID)})
+	if err != nil {
+		if err == patchain.ErrNotFound {
+			return nil, common.NewSingleAPIErr(404, "", "", "Identity not found", nil)
+		}
+	}
+
+	resp, _ := NewObjectResponse("identity", identity, nil)
+	return resp, nil
+}
