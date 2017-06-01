@@ -1,6 +1,7 @@
 package servers
 
 import (
+	"github.com/asaskevich/govalidator"
 	val "github.com/asaskevich/govalidator"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
@@ -118,9 +119,16 @@ func (s *RPC) CreateIdentity(ctx context.Context, req *proto_rpc.CreateIdentityM
 // GetIdentity fetches an identity object
 func (s *RPC) GetIdentity(ctx context.Context, req *proto_rpc.GetIdentityMsg) (*proto_rpc.ObjectResponse, error) {
 
+	var err error
+	var identity *tables.Object
 	objHandler := object.NewObject(s.db)
 
-	identity, err := objHandler.GetLast(&tables.Object{Key: object.MakeIdentityKey(req.ID)})
+	if govalidator.IsEmail(req.ID) {
+		identity, err = objHandler.GetLast(&tables.Object{Key: object.MakeIdentityKey(req.ID)})
+	} else {
+		identity, err = objHandler.GetLast(&tables.Object{ID: req.ID, QueryParams: patchain.KeyStartsWith(object.IdentityPrefix)})
+	}
+
 	if err != nil {
 		if err == patchain.ErrNotFound {
 			return nil, common.NewSingleAPIErr(404, "", "", "Identity not found", nil)
