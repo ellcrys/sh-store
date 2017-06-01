@@ -11,6 +11,19 @@ service API {
     rpc GetObjects(GetObjectMsg) returns (MultiObjectResponse);
     rpc CountObjects(GetObjectMsg) returns (ObjectCountResponse);
     rpc GetIdentity(GetIdentityMsg) returns (ObjectResponse);
+    rpc CreateMapping(CreateMappingMsg) returns (CreateMappingResponse);
+}
+
+// CreateMappingMsg represents mapping creation parameters
+message CreateMappingMsg {
+    // The name of the mapping
+    string Name = 2         [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"']; 
+    // JSON mapping structure as bytes
+    bytes Mapping = 1          [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"'];
+}
+
+message CreateMappingResponse {
+    string Name = 1       [(gogoproto.jsontag) = "id,omitempty", (gogoproto.moretags) = 'structs:"id,omitempty" mapstructure:"id,omitempty"'];
 }
 
 // GetIdentityMsg represents an identity request message

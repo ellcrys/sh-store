@@ -52,6 +52,7 @@ func (s *HTTP) getRouter() *mux.Router {
 	// v1 endpoints
 	g.HandleFunc("/identities", common.EasyHandle(http.MethodPost, s.createIdentity))
 	g.HandleFunc("/identities/{id}", common.EasyHandle(http.MethodGet, s.getIdentity))
+	g.HandleFunc("/mappings", common.EasyHandle(http.MethodPost, s.createMapping))
 	g.HandleFunc("/sessions", common.EasyHandle(http.MethodPost, s.createSession))
 	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodGet, s.getSession)).Methods(http.MethodGet)
 	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodDelete, s.deleteSession)).Methods(http.MethodDelete)
@@ -221,6 +222,39 @@ func (s *HTTP) createObjects(w http.ResponseWriter, r *http.Request) (interface{
 		}
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Objects: body})
+		return err
+	}); err != nil {
+		log.Errorf("%+v", err)
+		return err, 0
+	}
+
+	return resp, 201
+}
+
+// createMapping creates a mapping for an identity
+func (s *HTTP) createMapping(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+	var err error
+	var body struct {
+		Name    string                 `json:"name"`
+		Mapping map[string]interface{} `json:"mapping"`
+	}
+	var resp *proto_rpc.CreateMappingResponse
+
+	if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return common.BodyMalformedError, 400
+	}
+
+	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
+		authorization := r.Header.Get("Authorization")
+		var md metadata.MD
+		if len(authorization) > 0 {
+			md = metadata.Pairs("authorization", authorization)
+		}
+		ctx := metadata.NewContext(context.Background(), md)
+		resp, err = client.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{
+			Name:    body.Name,
+			Mapping: util.MustStringify(body.Mapping),
+		})
 		return err
 	}); err != nil {
 		log.Errorf("%+v", err)

@@ -43,6 +43,7 @@ var (
 		"/proto_rpc.API/GetDBSession",
 		"/proto_rpc.API/DeleteDBSession",
 		"/proto_rpc.API/CountObjects",
+		"/proto_rpc.API/CreateMapping",
 	}
 )
 
