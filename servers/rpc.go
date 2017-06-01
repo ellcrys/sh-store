@@ -123,18 +123,17 @@ func (s *RPC) Stop() error {
 func (s *RPC) createSystemResources() error {
 
 	identity := &tables.Object{
-		Key:       object.MakeIdentityKey(systemEmail),
-		Protected: true,
+		ID:            systemEmail,
+		Key:           object.MakeIdentityKey(systemEmail),
+		Protected:     true,
+		SchemaVersion: "1",
 	}
+
+	identity.Init()
+	identity.OwnerID = identity.ID
+	identity.CreatorID = identity.ID
 
 	obj := object.NewObject(s.db)
-
-	// Create system identity if it doesn't already exists. Set previous hash
-	// to the objects hash since system identity is not associated to a partition
-	identity.PrevHash = identity.ComputeHash().Hash
-	if err := obj.CreateOnce(identity); err != nil {
-		return errors.Wrap(err, "failed to create system identity")
-	}
 
 	// Create system partitions only if the number of system partitions is lower than the required number
 	var numExistingPartitions int64
@@ -145,6 +144,13 @@ func (s *RPC) createSystemResources() error {
 	if numExistingPartitions < defNumPartitions {
 		if _, err := obj.MustCreatePartitions(defNumPartitions-numExistingPartitions, identity.ID, identity.ID); err != nil {
 			return errors.Wrap(err, "failed to create system ledger")
+		}
+	}
+
+	// Create system identity if there is not system partition already existing
+	if numExistingPartitions == 0 {
+		if err := obj.Put(identity); err != nil {
+			return errors.Wrap(err, "failed to create system identity")
 		}
 	}
 
