@@ -57,16 +57,19 @@ func (s *RPC) CreateIdentity(ctx context.Context, req *proto_rpc.CreateIdentityM
 
 	objHandler := object.NewObject(s.db)
 
-	// ensure identity does not already exists
-	_, err = objHandler.GetLast(&tables.Object{OwnerID: systemIdentity.ID, QueryParams: patchain.KeyStartsWith(object.MakeIdentityKey(req.Email))})
+	// get existing identity
+	existingIdentity, err := objHandler.GetLast(&tables.Object{OwnerID: systemIdentity.ID, QueryParams: patchain.KeyStartsWith(object.MakeIdentityKey(req.Email))})
 	if err != nil {
 		if err != patchain.ErrNotFound {
 			return nil, common.ServerError
 		}
 	}
 
+	// check if existing identity has been confirmed
 	if err == nil {
-		return nil, common.NewSingleAPIErr(400, "used_email", "email", "Email is not available", nil)
+		if existingIdentity.Ref3 == "confirmed" {
+			return nil, common.NewSingleAPIErr(400, "used_email", "email", "Email is not available", nil)
+		}
 	}
 
 	var numPartitions = int64(5)
@@ -105,6 +108,8 @@ func (s *RPC) CreateIdentity(ctx context.Context, req *proto_rpc.CreateIdentityM
 		logRPC.Errorf("%+v", err)
 		return nil, common.ServerError
 	}
+
+	// TODO: send confirmation notification to email
 
 	resp, _ := NewObjectResponse("identity", newIdentity, nil)
 	return resp, nil
