@@ -2,8 +2,9 @@ package servers
 
 import (
 	"github.com/ellcrys/util"
-	"github.com/ncodes/safehold/servers/proto_rpc"
+	"github.com/jinzhu/copier"
 	"github.com/ncodes/patchain/cockroach/tables"
+	"github.com/ncodes/safehold/servers/proto_rpc"
 )
 
 // NewObjectResponse creates a standard object response
@@ -23,10 +24,9 @@ func NewObjectResponse(oType string, o *tables.Object, links map[string]string) 
 // NewMultiObjectResponse creates a multi object response from a slice of objects
 func NewMultiObjectResponse(oType string, objects []*tables.Object) (*proto_rpc.MultiObjectResponse, error) {
 	var objResponses []*proto_rpc.ObjectResponseData
-
 	for _, obj := range objects {
 		var _obj proto_rpc.Object
-		util.CopyToStruct(&_obj, obj)
+		copier.Copy(&_obj, obj)
 		objResponses = append(objResponses, &proto_rpc.ObjectResponseData{
 			Type:       oType,
 			ID:         _obj.ID,

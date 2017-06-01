@@ -270,12 +270,13 @@ func TestRPC(t *testing.T) {
 				So(err, ShouldBeNil)
 				So(req.ID, ShouldEqual, "some_id")
 
-				So(rpcServer.dbSession.HasSession(makeDBSessionID("some_id", session.ID)), ShouldEqual, true)
+				fullSid := makeDBSessionID("some_id", session.ID)
+				So(rpcServer.dbSession.HasSession(fullSid), ShouldEqual, true)
 
-				item, err := consulReg.Get(session.ID)
+				item, err := consulReg.Get(fullSid)
 				So(err, ShouldBeNil)
 				So(item, ShouldNotBeNil)
-				So(item.SID, ShouldEqual, session.ID)
+				So(item.SID, ShouldEqual, fullSid)
 			})
 		})
 
@@ -387,6 +388,63 @@ func TestRPC(t *testing.T) {
 					So(err, ShouldBeNil)
 					So(len(resp.Data), ShouldEqual, 1)
 					So(resp.Data[0].ID, ShouldEqual, obj.ID)
+				})
+			})
+		})
+
+		Convey(".CountObjects", func() {
+			Convey("With no session id", func() {
+				Convey("Should return error if owner does not exist", func() {
+					ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+					_, err := rpcServer.CountObjects(ctx, &proto_rpc.GetObjectMsg{
+						Owner: "unknown",
+					})
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, `{"Message":"owner not found","Errors":{"errors":[{"status":"404","message":"owner not found"}]},"StatusCode":404}`)
+				})
+
+				Convey("Should return error if creator does not exist", func() {
+					ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+					_, err := rpcServer.CountObjects(ctx, &proto_rpc.GetObjectMsg{
+						Creator: "unknown",
+					})
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, `{"Message":"creator not found","Errors":{"errors":[{"status":"404","message":"creator not found"}]},"StatusCode":404}`)
+				})
+
+				Convey("Should return error if owner is not the same as the developer identity", func() {
+
+					ownerID := util.RandString(10)
+					owner := object.MakeIdentityObject(ownerID, ownerID, util.RandString(5)+"@email.com", "password", true)
+					err := cdb.Create(owner)
+					So(err, ShouldBeNil)
+
+					ctx := context.WithValue(context.Background(), CtxIdentity, "developer_id")
+					_, err = rpcServer.CountObjects(ctx, &proto_rpc.GetObjectMsg{
+						Owner: owner.ID,
+					})
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, `{"Message":"permission denied: you are not authorized to access objects for the owner","Errors":{"errors":[{"status":"401","message":"permission denied: you are not authorized to access objects for the owner"}]},"StatusCode":401}`)
+				})
+
+				Convey("Should successfully get an object", func() {
+
+					ownerID := util.RandString(10)
+					owner := object.MakeIdentityObject(ownerID, ownerID, util.RandString(5)+"@email.com", "password", true)
+					err := cdb.Create(owner)
+					So(err, ShouldBeNil)
+
+					obj := &tables.Object{OwnerID: owner.ID, CreatorID: owner.ID, Key: "a_key"}
+					obj.Init().ComputeHash()
+					err = cdb.Create(obj)
+					So(err, ShouldBeNil)
+					ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
+					resp, err := rpcServer.CountObjects(ctx, &proto_rpc.GetObjectMsg{
+						Query: util.MustStringify(map[string]interface{}{"key": "a_key"}),
+						Owner: owner.ID,
+					})
+					So(err, ShouldBeNil)
+					So(resp.Count, ShouldEqual, 1)
 				})
 			})
 		})

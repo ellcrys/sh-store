@@ -111,8 +111,9 @@ func (s *Session) Stop() {
 
 	s.Lock()
 	defer s.Unlock()
-	for _, agent := range s.agents {
+	for sid, agent := range s.agents {
 		agent.Stop()
+		s.RemoveAgent(sid)
 	}
 }
 
@@ -123,7 +124,7 @@ func (s *Session) removeAgentRef(id string) {
 	delete(s.agents, id)
 }
 
-// RemoveAgent stops and removes an agent
+// RemoveAgent stops and removes an agent from memory and registry
 func (s *Session) RemoveAgent(id string) {
 	if s.HasSession(id) {
 		s.GetAgent(id).Stop()
@@ -145,7 +146,7 @@ func (s *Session) CommitEnd(id string) {
 // removes the session/agent
 func (s *Session) RollbackEnd(id string) {
 	if s.HasSession(id) {
-		s.GetAgent(id).commit()
+		s.GetAgent(id).rollback()
 		s.RemoveAgent(id)
 	}
 }
@@ -239,6 +240,23 @@ func SendQueryOpWithSession(ses *Session, sid, query string, limit int, order st
 		Out:     out,
 		Limit:   limit,
 		OrderBy: order,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// SendCountOpWithSession sends a query operation using an existing session id
+func SendCountOpWithSession(ses *Session, sid, query string, out interface{}) error {
+	agent := ses.GetAgent(sid)
+	if agent == nil {
+		return fmt.Errorf("session not found")
+	}
+	if err := ses.SendOp(sid, &Op{
+		OpType: OpCountObjects,
+		Data:   query,
+		Done:   make(chan struct{}),
+		Out:    out,
 	}); err != nil {
 		return err
 	}

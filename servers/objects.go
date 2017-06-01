@@ -244,7 +244,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 		defer s.dbSession.CommitEnd(fullSessionID)
 	}
 
-	// if owner is set and not the same as the developer id, check if exists
+	// if owner is set and not the same as the developer id, check if it exists
 	if len(req.Owner) > 0 && req.Owner != developerID {
 		if err := session.SendQueryOpWithSession(s.dbSession, fullSessionID, `{ "id": "`+req.Owner+`" }`, 1, "", &tables.Object{}); err != nil {
 			if err == patchain.ErrNotFound {
@@ -295,4 +295,116 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 	resp, _ := NewMultiObjectResponse("object", objs)
 	return resp, nil
+}
+
+// CountObjects counts the number of objects that match a query
+func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*proto_rpc.ObjectCountResponse, error) {
+
+	authorization := util.FromIncomingMD(ctx, "authorization")
+	developerID := ctx.Value(CtxIdentity).(string)
+	sessionID := util.FromIncomingMD(ctx, "session_id")
+	fullSessionID := makeDBSessionID(developerID, sessionID)
+	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
+
+	// check if session exist in the in-memory session cache,
+	// use it else check if it exist on the session registry. If it does,
+	// forward the request to the associated host
+	if sessionID != "" {
+		if !s.dbSession.HasSession(fullSessionID) {
+
+			if localOnly {
+				return nil, fmt.Errorf("session not found")
+			}
+
+			// find session in the registry
+			sessionItem, err := s.sessionReg.Get(fullSessionID)
+			if err != nil {
+				if err == session.ErrNotFound {
+					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+				}
+				return nil, common.ServerError
+			}
+
+			sessionHostAddr := net.JoinHostPort(sessionItem.Address, strconv.Itoa(sessionItem.Port))
+			client, err := grpc.Dial(sessionHostAddr, grpc.WithInsecure())
+			if err != nil {
+				return nil, common.ServerError
+			}
+			defer client.Close()
+
+			// make call to the session host server.
+			// include the session_id, auth token of the current request
+			// and set local-only to force the RPC method
+			// to only perform local object creation
+			server := proto_rpc.NewAPIClient(client)
+			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "local-only", "true"))
+			resp, err := server.CountObjects(ctx, req)
+			if err != nil {
+				if grpc.ErrorDesc(err) == "session not found" {
+					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+				}
+				logRPC.Errorf("%+v", err)
+				return nil, common.ServerError
+			}
+
+			return resp, nil
+		}
+	} else {
+		fullSessionID = makeDBSessionID(developerID, util.UUID4())
+		s.dbSession.CreateUnregisteredSession(fullSessionID, developerID)
+		defer s.dbSession.CommitEnd(fullSessionID)
+	}
+
+	// if owner is set and not the same as the developer id, check if it exists
+	if len(req.Owner) > 0 && req.Owner != developerID {
+		if err := session.SendQueryOpWithSession(s.dbSession, fullSessionID, `{ "id": "`+req.Owner+`" }`, 1, "", &tables.Object{}); err != nil {
+			if err == patchain.ErrNotFound {
+				return nil, common.NewSingleAPIErr(404, "", "", "owner not found", nil)
+			}
+			logRPC.Errorf("%+v", err)
+			return nil, common.ServerError
+		}
+	}
+
+	// if creator is set and not the same as the developer id, check if it exists
+	if len(req.Creator) > 0 && req.Creator != developerID {
+		if err := session.SendQueryOpWithSession(s.dbSession, fullSessionID, `{ "id": "`+req.Creator+`" }`, 1, "", &tables.Object{}); err != nil {
+			if err == patchain.ErrNotFound {
+				return nil, common.NewSingleAPIErr(404, "", "", "creator not found", nil)
+			}
+			logRPC.Errorf("%+v", err)
+			return nil, common.ServerError
+		}
+	}
+
+	// default owner and creator
+	if len(req.Owner) == 0 {
+		req.Owner = developerID
+	}
+	if len(req.Creator) == 0 {
+		req.Creator = developerID
+	}
+
+	// developer is not the owner, this action requires permission
+	// TODO: ensure auth token must be a user token from the owner
+	// and the token authorizes access to the object created by the creator for this developer
+	if developerID != req.Owner {
+		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects for the owner", nil)
+	}
+
+	// include owner and creator filters
+	var queryAsMap map[string]interface{}
+	util.FromJSON(req.Query, &queryAsMap)
+	queryAsMap["owner_id"] = req.Owner
+	queryAsMap["creator_id"] = req.Creator
+
+	var count int64
+	if err := session.SendCountOpWithSession(s.dbSession, fullSessionID, string(util.MustStringify(queryAsMap)), &count); err != nil {
+		logRPC.Errorf("%+v", err)
+		return nil, common.ServerError
+	}
+
+	return &proto_rpc.ObjectCountResponse{
+		Count: count,
+	}, nil
 }

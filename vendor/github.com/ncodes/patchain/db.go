@@ -35,8 +35,11 @@ type DB interface {
 	// CreateBulk is like Create but supports multiple objects
 	CreateBulk(objs []interface{}, options ...Option) error
 
+	// UpdatePeerHash updates the peer hash of an object
+	UpdatePeerHash(obj interface{}, newPeerHash string, options ...Option) error
+
 	// Count counts the number of objects in the patchain that matches a query
-	Count(q Query, out *int64, options ...Option) error
+	Count(q Query, out interface{}, options ...Option) error
 
 	// GetLast gets the last and most recent object that match the query
 	GetLast(q Query, out interface{}, options ...Option) error

@@ -41,6 +41,7 @@ var (
 		"/proto_rpc.API/CreateDBSession",
 		"/proto_rpc.API/GetDBSession",
 		"/proto_rpc.API/DeleteDBSession",
+		"/proto_rpc.API/CountObjects",
 	}
 )
 

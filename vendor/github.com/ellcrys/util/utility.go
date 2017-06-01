@@ -815,6 +815,9 @@ func CopyToStruct(dst interface{}, src interface{}) error {
 
 // GetAuthToken returns authorization code of a specific bearer from a context
 func GetAuthToken(ctx context.Context, scheme string) (string, error) {
+
+	scheme = strings.ToLower(scheme)
+
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return "", fmt.Errorf("no metadata in context")
@@ -828,7 +831,7 @@ func GetAuthToken(ctx context.Context, scheme string) (string, error) {
 	authSplit := strings.SplitN(authorization[0], " ", 2)
 	if len(authSplit) != 2 {
 		return "", fmt.Errorf("authorization format is invalid")
-	} else if authSplit[0] != scheme {
+	} else if strings.ToLower(authSplit[0]) != scheme {
 		return "", fmt.Errorf("request unauthenticated with %s", scheme)
 	}
 
@@ -877,4 +880,9 @@ func FromIncomingMD(d interface{}, key string) string {
 		return ""
 	}
 	return md[key][0]
+}
+
+// StrToPtr returns a pointer to a string
+func StrToPtr(str string) *string {
+	return &str
 }

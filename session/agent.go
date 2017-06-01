@@ -30,6 +30,9 @@ var (
 	// OpGetObjects represents a get object operation
 	OpGetObjects OpType = 4
 
+	// OpCountObjects represents a count operation
+	OpCountObjects OpType = 5
+
 	// MaxSessionIdleTime is the maximum duration a session can be idle before stopping
 	MaxSessionIdleTime = 10 * time.Minute
 )
@@ -83,7 +86,7 @@ func (a *Agent) Stop() {
 func (a *Agent) put(d interface{}) error {
 
 	if !a.began {
-		return fmt.Errorf("agent has not started. Did you can Begin()?")
+		return fmt.Errorf("agent has not started. Did you call Begin()?")
 	}
 
 	var dbOp = patchain.UseDBOption{DB: a.tx}
@@ -94,7 +97,7 @@ func (a *Agent) put(d interface{}) error {
 func (a *Agent) get(op *Op, out interface{}) error {
 
 	if !a.began {
-		return fmt.Errorf("agent has not started. Did you can Begin()?")
+		return fmt.Errorf("agent has not started. Did you call Begin()?")
 	}
 
 	if op == nil {
@@ -121,6 +124,54 @@ func (a *Agent) get(op *Op, out interface{}) error {
 	}
 
 	err = a.tx.GetAll(&tables.Object{
+		QueryParams: patchain.QueryParams{
+			Limit:   op.Limit,
+			OrderBy: op.OrderBy,
+			Expr: patchain.Expr{
+				Expr: sql,
+				Args: args,
+			},
+		},
+	}, out)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// counts object that match a query
+func (a *Agent) count(op *Op, out interface{}) error {
+
+	if !a.began {
+		return fmt.Errorf("agent has not started. Did you call Begin()?")
+	}
+
+	if op == nil {
+		return fmt.Errorf("operation object is required")
+	}
+
+	queryJSON, ok := op.Data.(string)
+	if !ok || !govalidator.IsJSON(queryJSON) {
+		return fmt.Errorf("query must be a json string")
+	}
+
+	jsq := a.tx.NewQuery()
+	if err := jsq.Parse(queryJSON); err != nil {
+		return errors.Wrap(err, "failed to parse query")
+	}
+
+	sql, args, err := jsq.ToSQL()
+	if err != nil {
+		return errors.Wrap(err, "failed to generate SQL")
+	}
+
+	if a.debug {
+		logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, op.OrderBy, op.Limit)
+	}
+
+	err = a.tx.Count(&tables.Object{
 		QueryParams: patchain.QueryParams{
 			Limit:   op.Limit,
 			OrderBy: op.OrderBy,
@@ -194,6 +245,11 @@ func (a *Agent) Begin(endCb func()) {
 				}
 			case OpGetObjects:
 				op.Error = a.get(op, op.Out)
+				if op.Error != nil {
+					a.rollback()
+				}
+			case OpCountObjects:
+				op.Error = a.count(op, op.Out)
 				if op.Error != nil {
 					a.rollback()
 				}

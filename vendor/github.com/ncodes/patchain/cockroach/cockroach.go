@@ -174,6 +174,12 @@ func (c *DB) CreateBulk(objs []interface{}, options ...patchain.Option) error {
 	return nil
 }
 
+// UpdatePeerHash updates the peer hash of an object
+func (c *DB) UpdatePeerHash(obj interface{}, newPeerHash string, options ...patchain.Option) error {
+	dbTx, _ := c.getDBTxFromOption(options, &DB{db: c.db})
+	return dbTx.GetConn().(*gorm.DB).Model(obj).Update("peer_hash", newPeerHash).Error
+}
+
 // NewDB creates a new connection
 func (c *DB) NewDB() patchain.DB {
 	return &DB{db: c.db.NewScope(nil).NewDB()}
@@ -229,7 +235,7 @@ func (c *DB) Rollback() error {
 // GetLast gets the last document that matches the query object
 func (c *DB) GetLast(q patchain.Query, out interface{}, options ...patchain.Option) error {
 	dbTx, _ := c.getDBTxFromOption(options, &DB{db: c.db})
-	err := dbTx.GetConn().(*gorm.DB).Scopes(c.getQueryModifiers(q)...).Limit(1).Find(out).Error
+	err := dbTx.GetConn().(*gorm.DB).Order("timestamp desc").Scopes(c.getQueryModifiers(q)...).Limit(1).Find(out).Error
 	if err != nil {
 		if common.CompareErr(err, gorm.ErrRecordNotFound) == 0 {
 			return patchain.ErrNotFound
@@ -253,7 +259,7 @@ func (c *DB) GetAll(q patchain.Query, out interface{}, options ...patchain.Optio
 }
 
 // Count returns a count of the number of documents that matches the query
-func (c *DB) Count(q patchain.Query, out *int64, options ...patchain.Option) error {
+func (c *DB) Count(q patchain.Query, out interface{}, options ...patchain.Option) error {
 	dbTx, _ := c.getDBTxFromOption(options, &DB{db: c.db})
 	return dbTx.GetConn().(*gorm.DB).
 		Scopes(c.getQueryModifiers(q)...).

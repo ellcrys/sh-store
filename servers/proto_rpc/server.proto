@@ -9,6 +9,12 @@ service API {
     rpc GetDBSession(DBSession) returns (DBSession);
     rpc DeleteDBSession(DBSession) returns (DBSession);
     rpc GetObjects(GetObjectMsg) returns (MultiObjectResponse);
+    rpc CountObjects(GetObjectMsg) returns (ObjectCountResponse);
+}
+
+// ObjectCountResponse represents object counts 
+message ObjectCountResponse {
+    int64 count = 1;
 }
 
 // GetObjectMsg represents query parameters for retrieving objects
@@ -75,15 +81,16 @@ message Object {
     bool refOnly = 8           [(gogoproto.jsontag) = "ref_only,omitempty", (gogoproto.moretags) = 'structs:"refOnly,omitempty" mapstructure:"refOnly,omitempty"'];
     int64 timestamp = 9        [(gogoproto.jsontag) = "timestamp,omitempty", (gogoproto.moretags) = 'structs:"timestamp,omitempty" mapstructure:"timestamp,omitempty"'];
     string prevHash = 10       [(gogoproto.jsontag) = "prev_hash,omitempty", (gogoproto.moretags) = 'structs:"prevHash,omitempty" mapstructure:"prevHash,omitempty"'];
-    string hash = 11           [(gogoproto.jsontag) = "hash,omitempty", (gogoproto.moretags) = 'structs:"hash,omitempty" mapstructure:"hash,omitempty"'];
-    string ref1 = 12           [(gogoproto.jsontag) = "ref1,omitempty", (gogoproto.moretags) = 'structs:"ref1,omitempty" mapstructure:"ref1,omitempty"'];
-    string ref2 = 13           [(gogoproto.jsontag) = "ref2,omitempty", (gogoproto.moretags) = 'structs:"ref2,omitempty" mapstructure:"ref2,omitempty"'];
-    string ref3 = 14           [(gogoproto.jsontag) = "ref3,omitempty", (gogoproto.moretags) = 'structs:"ref3,omitempty" mapstructure:"ref3,omitempty"'];
-    string ref4 = 15           [(gogoproto.jsontag) = "ref4,omitempty", (gogoproto.moretags) = 'structs:"ref4,omitempty" mapstructure:"ref4,omitempty"'];
-    string ref5 = 16           [(gogoproto.jsontag) = "ref5,omitempty", (gogoproto.moretags) = 'structs:"ref5,omitempty" mapstructure:"ref5,omitempty"'];
-    string ref6 = 17           [(gogoproto.jsontag) = "ref6,omitempty", (gogoproto.moretags) = 'structs:"ref6,omitempty" mapstructure:"ref6,omitempty"'];
-    string ref7 = 18           [(gogoproto.jsontag) = "ref7,omitempty", (gogoproto.moretags) = 'structs:"ref7,omitempty" mapstructure:"ref7,omitempty"'];
-    string ref8 = 19           [(gogoproto.jsontag) = "ref8,omitempty", (gogoproto.moretags) = 'structs:"ref8,omitempty" mapstructure:"ref8,omitempty"'];
-    string ref9 = 20           [(gogoproto.jsontag) = "ref9,omitempty", (gogoproto.moretags) = 'structs:"ref9,omitempty" mapstructure:"ref9,omitempty"'];
-    string ref10 = 21          [(gogoproto.jsontag) = "ref10,omitempty", (gogoproto.moretags) = 'structs:"ref10,omitempty" mapstructure:"ref10,omitempty"'];
+    string peerHash = 11       [(gogoproto.jsontag) = "peer_hash,omitempty", (gogoproto.moretags) = 'structs:"peerHash,omitempty" mapstructure:"peerHash,omitempty"'];
+    string hash = 12           [(gogoproto.jsontag) = "hash,omitempty", (gogoproto.moretags) = 'structs:"hash,omitempty" mapstructure:"hash,omitempty"'];
+    string ref1 = 13           [(gogoproto.jsontag) = "ref1,omitempty", (gogoproto.moretags) = 'structs:"ref1,omitempty" mapstructure:"ref1,omitempty"'];
+    string ref2 = 14           [(gogoproto.jsontag) = "ref2,omitempty", (gogoproto.moretags) = 'structs:"ref2,omitempty" mapstructure:"ref2,omitempty"'];
+    string ref3 = 15           [(gogoproto.jsontag) = "ref3,omitempty", (gogoproto.moretags) = 'structs:"ref3,omitempty" mapstructure:"ref3,omitempty"'];
+    string ref4 = 16           [(gogoproto.jsontag) = "ref4,omitempty", (gogoproto.moretags) = 'structs:"ref4,omitempty" mapstructure:"ref4,omitempty"'];
+    string ref5 = 17           [(gogoproto.jsontag) = "ref5,omitempty", (gogoproto.moretags) = 'structs:"ref5,omitempty" mapstructure:"ref5,omitempty"'];
+    string ref6 = 18           [(gogoproto.jsontag) = "ref6,omitempty", (gogoproto.moretags) = 'structs:"ref6,omitempty" mapstructure:"ref6,omitempty"'];
+    string ref7 = 19           [(gogoproto.jsontag) = "ref7,omitempty", (gogoproto.moretags) = 'structs:"ref7,omitempty" mapstructure:"ref7,omitempty"'];
+    string ref8 = 20           [(gogoproto.jsontag) = "ref8,omitempty", (gogoproto.moretags) = 'structs:"ref8,omitempty" mapstructure:"ref8,omitempty"'];
+    string ref9 = 21           [(gogoproto.jsontag) = "ref9,omitempty", (gogoproto.moretags) = 'structs:"ref9,omitempty" mapstructure:"ref9,omitempty"'];
+    string ref10 = 22          [(gogoproto.jsontag) = "ref10,omitempty", (gogoproto.moretags) = 'structs:"ref10,omitempty" mapstructure:"ref10,omitempty"'];
 }
