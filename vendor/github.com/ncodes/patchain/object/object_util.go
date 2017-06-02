@@ -3,19 +3,21 @@ package object
 import (
 	"fmt"
 
+	"strings"
+
 	"github.com/ellcrys/util"
 	"github.com/ncodes/patchain/cockroach/tables"
 )
 
 var (
 	// PartitionPrefix is the prefix of a partition key
-	PartitionPrefix = "partition/"
+	PartitionPrefix = "$partition/"
 
 	// IdentityPrefix is the prefix of an identity key
-	IdentityPrefix = "identity/"
+	IdentityPrefix = "$identity/"
 
 	// MappingPrefix is the prefix of an object mappings
-	MappingPrefix = "mapping/"
+	MappingPrefix = "$mapping/"
 )
 
 // MakeIdentityKey creates an identity key
@@ -41,6 +43,16 @@ func MakePartitionObject(name, ownerID, creatorID string) *tables.Object {
 		Key:       MakePartitionKey(name),
 	}
 	return po.Init()
+}
+
+// SplitKey returns the prefix and name part of a system key
+// such as partition, identity or mapping keys.
+func SplitKey(key string) (string, string, error) {
+	split := strings.SplitN(key, "/", 2)
+	if split == nil || len(split) != 2 {
+		return "", "", fmt.Errorf("invalid key format")
+	}
+	return split[0], split[1], nil
 }
 
 // MakeIdentityObject creates an object that describes an identity

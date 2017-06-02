@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/ellcrys/util"
+	"github.com/jinzhu/gorm"
 	"github.com/ncodes/patchain/cockroach"
 	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
@@ -44,6 +45,15 @@ func dropDB(t *testing.T) error {
 	_, err := testDB.Query(fmt.Sprintf("DROP DATABASE %s;", dbName))
 	return err
 }
+
+func clearTable(db *gorm.DB, tables ...string) error {
+	_, err := db.CommonDB().Exec("TRUNCATE " + strings.Join(tables, ","))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func TestRPC(t *testing.T) {
 
 	if err := createDb(t); err != nil {
@@ -54,7 +64,7 @@ func TestRPC(t *testing.T) {
 	cdb := cockroach.NewDB()
 	cdb.ConnectionString = conStrWithDB
 	cdb.NoLogging()
-	if err := cdb.Connect(10, 5); err != nil {
+	if err := cdb.Connect(0, 10); err != nil {
 		t.Fatalf("failed to connect to database. %s", err)
 	}
 
@@ -74,7 +84,7 @@ func TestRPC(t *testing.T) {
 	rpcServer.dbSession.SetDB(rpcServer.db)
 	rpcServer.object = object.NewObject(rpcServer.db)
 
-	Convey("TestIdentity", t, func() {
+	Convey("TestRPC", t, func() {
 
 		Convey(".validateIdentity", func() {
 			errs := validateIdentity(&proto_rpc.CreateIdentityMsg{})
@@ -116,11 +126,52 @@ func TestRPC(t *testing.T) {
 				So(o.Data.Attributes.PartitionID, ShouldNotBeEmpty)
 				So(o.Data.Attributes.Protected, ShouldEqual, true)
 
-				Convey("Should return error if a matching identity already exists", func() {
+				Convey("Should not error if existing identity is not confirmed", func() {
 					_, err := rpcServer.CreateIdentity(context.Background(), newIdentity)
+					So(err, ShouldBeNil)
+				})
+
+				Convey("Should return error if existing identity has been confirmed", func() {
+					systemIdentity, err := rpcServer.getSystemIdentity()
+					So(err, ShouldBeNil)
+
+					email := "email_xyz@e.com"
+					identity := object.MakeIdentityObject(systemIdentity.ID, systemIdentity.CreatorID, email, "some_pass", false)
+					identity.Ref3 = "confirmed"
+					err = cdb.Create(identity)
+					So(err, ShouldBeNil)
+
+					newIdentity := &proto_rpc.CreateIdentityMsg{Email: email, Password: "some_password"}
+					_, err = rpcServer.CreateIdentity(context.Background(), newIdentity)
 					So(err, ShouldNotBeNil)
 					So(err.Error(), ShouldEqual, `{"Message":"Email is not available","Errors":{"errors":[{"status":"400","code":"used_email","field":"email","message":"Email is not available"}]},"StatusCode":400}`)
 				})
+			})
+		})
+
+		Convey(".GetIdentity", func() {
+			Convey("Should return error if identity is not found", func() {
+				identity, err := rpcServer.GetIdentity(context.Background(), &proto_rpc.GetIdentityMsg{
+					ID: "some_unknown_id",
+				})
+				So(identity, ShouldBeNil)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, `{"Message":"Identity not found","Errors":{"errors":[{"status":"404","message":"Identity not found"}]},"StatusCode":404}`)
+			})
+
+			Convey("Should successfully return an existing identity", func() {
+				systemIdentity, err := rpcServer.getSystemIdentity()
+				So(err, ShouldBeNil)
+
+				email := util.RandString(5) + "@e.com"
+				identity := object.MakeIdentityObject(systemIdentity.ID, systemIdentity.ID, email, "some_pass", false)
+				identity.Ref3 = "confirmed"
+				err = cdb.Create(identity)
+				So(err, ShouldBeNil)
+
+				resp, err := rpcServer.GetIdentity(context.Background(), &proto_rpc.GetIdentityMsg{ID: identity.ID})
+				So(err, ShouldBeNil)
+				So(resp.Data.Attributes.ID, ShouldEqual, identity.ID)
 			})
 		})
 
@@ -216,7 +267,6 @@ func TestRPC(t *testing.T) {
 				})
 
 				Convey("Should successfully create object belonging to the authenticated identity(developer)", func() {
-
 					partitions, err := object.NewObject(cdb).CreatePartitions(1, owner.ID, owner.ID)
 					So(err, ShouldBeNil)
 					So(len(partitions), ShouldEqual, 1)
@@ -233,7 +283,6 @@ func TestRPC(t *testing.T) {
 				})
 
 				Convey("With session id", func() {
-
 					partitions, err := object.NewObject(cdb).CreatePartitions(1, owner.ID, owner.ID)
 					So(err, ShouldBeNil)
 					So(len(partitions), ShouldEqual, 1)
@@ -264,12 +313,12 @@ func TestRPC(t *testing.T) {
 			Convey("Should successfully create a session", func() {
 				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
 				session := &proto_rpc.DBSession{
-					ID: "some_id",
+					ID: util.RandString(5),
 				}
+
 				req, err := rpcServer.CreateDBSession(ctx, session)
 				So(err, ShouldBeNil)
-				So(req.ID, ShouldEqual, "some_id")
-
+				So(req.ID, ShouldEqual, session.ID)
 				fullSid := makeDBSessionID("some_id", session.ID)
 				So(rpcServer.dbSession.HasSession(fullSid), ShouldEqual, true)
 
@@ -277,11 +326,11 @@ func TestRPC(t *testing.T) {
 				So(err, ShouldBeNil)
 				So(item, ShouldNotBeNil)
 				So(item.SID, ShouldEqual, fullSid)
+				rpcServer.dbSession.End(fullSid)
 			})
 		})
 
 		Convey(".GetDBSession", func() {
-
 			Convey("Should return `session not found` error if session does not exist", func() {
 				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
 				session := &proto_rpc.DBSession{
@@ -305,6 +354,8 @@ func TestRPC(t *testing.T) {
 				res, err = rpcServer.GetDBSession(ctx, session)
 				So(err, ShouldBeNil)
 				So(res.ID, ShouldEqual, session.ID)
+
+				rpcServer.dbSession.End(makeDBSessionID("some_id", "some_id"))
 			})
 		})
 
@@ -445,6 +496,194 @@ func TestRPC(t *testing.T) {
 					})
 					So(err, ShouldBeNil)
 					So(resp.Count, ShouldEqual, 1)
+				})
+			})
+		})
+
+		Convey("Mappings", func() {
+			Convey(".validateMapping", func() {
+				Convey("Case 1: returns error if no mapping is provided", func() {
+					mapping := map[string]interface{}{}
+					errs := validateMapping(mapping)
+					So(errs, ShouldNotBeEmpty)
+					So(errs[0].Field, ShouldEqual, "mapping")
+					So(errs[0].Message, ShouldEqual, "requires at least one mapped field")
+				})
+
+				Convey("Case 2: returns error if mapping value type is not string or map", func() {
+					mapping := map[string]interface{}{
+						"custom_field": 2,
+					}
+					errs := validateMapping(mapping)
+					So(errs, ShouldNotBeEmpty)
+					So(errs[0].Field, ShouldEqual, "custom_field")
+					So(errs[0].Message, ShouldEqual, "invalid value type. Expected string or json type")
+				})
+
+				Convey("Case 2: returns error if custom field is mapped to an unknown column", func() {
+					mapping := map[string]interface{}{
+						"custom_field": "unknown_column",
+					}
+					errs := validateMapping(mapping)
+					So(errs, ShouldNotBeEmpty)
+					So(errs[0].Field, ShouldEqual, "custom_field")
+					So(errs[0].Message, ShouldEqual, "column name 'unknown_column' is unknown")
+				})
+
+				Convey("Case 3: returns error if custom field with map value has no `field` property", func() {
+					mapping := map[string]interface{}{
+						"custom_field": map[string]interface{}{},
+					}
+					errs := validateMapping(mapping)
+					So(errs, ShouldNotBeEmpty)
+					So(errs[0].Field, ShouldEqual, "custom_field")
+					So(errs[0].Message, ShouldEqual, "'field' property is required")
+				})
+
+				Convey("Case 4: returns error if `custom_field.field` has invalid value type", func() {
+					mapping := map[string]interface{}{
+						"custom_field": map[string]interface{}{
+							"field": 1,
+						},
+					}
+					errs := validateMapping(mapping)
+					So(errs, ShouldNotBeEmpty)
+					So(errs[0].Field, ShouldEqual, "custom_field.field")
+					So(errs[0].Message, ShouldEqual, "invalid value type. Expected string type")
+				})
+
+				Convey("Case 5: returns error if `custom_field.protected` property has invalid value type", func() {
+					mapping := map[string]interface{}{
+						"custom_field": map[string]interface{}{
+							"field":     "id",
+							"protected": 1,
+						},
+					}
+					errs := validateMapping(mapping)
+					So(errs, ShouldNotBeEmpty)
+					So(errs[0].Field, ShouldEqual, "custom_field.protected")
+					So(errs[0].Message, ShouldEqual, "invalid value type. Expected boolean type")
+				})
+			})
+
+			Convey(".CreateMapping", func() {
+				Convey("Should return error if mapping json is malformed", func() {
+					ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+					_, err := rpcServer.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{
+						Name:    "abc",
+						Mapping: []byte("{"),
+					})
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, `{"Message":"malformed mapping. Expected json object.","Errors":{"errors":[{"status":"404","message":"malformed mapping. Expected json object."}]},"StatusCode":404}`)
+				})
+
+				Convey("Should return error if mapping json failed validation", func() {
+					ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+					_, err := rpcServer.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{
+						Name:    "abc",
+						Mapping: []byte(`{}`),
+					})
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, `{"Message":"mapping error","Errors":{"errors":[{"field":"mapping","message":"requires at least one mapped field"}]},"StatusCode":400}`)
+				})
+
+				Convey("Should successfully create a mapping", func() {
+					err := rpcServer.createSystemResources()
+					So(err, ShouldBeNil)
+					identity, err := rpcServer.getSystemIdentity()
+					So(err, ShouldBeNil)
+
+					ctx := context.WithValue(context.Background(), CtxIdentity, identity.ID)
+					resp, err := rpcServer.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{
+						Name:    "map1",
+						Mapping: []byte(`{ "custom_name": "ref1" }`),
+					})
+					So(err, ShouldBeNil)
+					So(resp.Name, ShouldEqual, "map1")
+
+					Convey(".GetMapping", func() {
+						Convey("Should return error if mapping name is not provided", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+							_, err := rpcServer.GetMapping(ctx, &proto_rpc.GetMappingMsg{})
+							So(err, ShouldNotBeNil)
+							So(err.Error(), ShouldEqual, `{"Message":"name is required","Errors":{"errors":[{"status":"400","field":"id","message":"name is required"}]},"StatusCode":400}`)
+						})
+
+						Convey("Should return error if a mapping with matching name does not exist", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity.ID)
+							_, err = rpcServer.GetMapping(ctx, &proto_rpc.GetMappingMsg{Name: "unknown_name"})
+							So(err, ShouldNotBeNil)
+							So(err.Error(), ShouldEqual, `{"Message":"mapping not found","Errors":{"errors":[{"status":"404","message":"mapping not found"}]},"StatusCode":404}`)
+						})
+
+						Convey("Should successfully return an existing mapping", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity.ID)
+							resp, err := rpcServer.GetMapping(ctx, &proto_rpc.GetMappingMsg{Name: "map1"})
+							So(err, ShouldBeNil)
+							So(resp.Mapping, ShouldResemble, []byte(`{ "custom_name": "ref1" }`))
+						})
+					})
+
+					Convey(".GetMappings", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity.ID)
+						resp, err := rpcServer.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{
+							Name:    "map2",
+							Mapping: []byte(`{ "custom_name": "ref2" }`),
+						})
+						So(err, ShouldBeNil)
+						So(resp.Name, ShouldEqual, "map2")
+
+						ctx = context.WithValue(context.Background(), CtxIdentity, identity.ID)
+						resp, err = rpcServer.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{
+							Name:    "map2",
+							Mapping: []byte(`{ "custom_name": "ref2" }`),
+						})
+						So(err, ShouldBeNil)
+						So(resp.Name, ShouldEqual, "map2")
+
+						Convey("Should return all mappings belonging to the logged in identity", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity.ID)
+							resp, err := rpcServer.GetAllMapping(ctx, &proto_rpc.GetAllMappingMsg{})
+							So(err, ShouldBeNil)
+							So(len(resp.Mappings), ShouldEqual, 3)
+							So(resp.Mappings[0].Name, ShouldEqual, object.MakeMappingKey("map2"))
+							So(resp.Mappings[0].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))
+							So(resp.Mappings[1].Name, ShouldEqual, object.MakeMappingKey("map2"))
+							So(resp.Mappings[1].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))
+							So(resp.Mappings[2].Name, ShouldEqual, object.MakeMappingKey("map1"))
+							So(resp.Mappings[2].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref1" }`))
+						})
+
+						Convey("Should return all mappings matching a specific name", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity.ID)
+							resp, err := rpcServer.GetAllMapping(ctx, &proto_rpc.GetAllMappingMsg{
+								Name: "map2",
+							})
+							So(err, ShouldBeNil)
+							So(len(resp.Mappings), ShouldEqual, 2)
+							So(resp.Mappings[0].Name, ShouldEqual, object.MakeMappingKey("map2"))
+							So(resp.Mappings[0].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))
+							So(resp.Mappings[1].Name, ShouldEqual, object.MakeMappingKey("map2"))
+							So(resp.Mappings[1].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))
+						})
+
+						Convey("Should return all mappings matching a specific name and limit by 1", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity.ID)
+							resp, err := rpcServer.GetAllMapping(ctx, &proto_rpc.GetAllMappingMsg{
+								Name:  "map2",
+								Limit: 1,
+							})
+							So(err, ShouldBeNil)
+							So(len(resp.Mappings), ShouldEqual, 1)
+							So(resp.Mappings[0].Name, ShouldEqual, object.MakeMappingKey("map2"))
+							So(resp.Mappings[0].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))
+						})
+
+					})
+
+					Reset(func() {
+						clearTable(cdb.GetConn().(*gorm.DB), "objects")
+					})
 				})
 			})
 		})

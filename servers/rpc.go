@@ -65,7 +65,7 @@ func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 		logRPC.Infof("Started RPC server @ %s", addr)
 
 		// connect database
-		if err := s.db.Connect(1000, 10); err != nil {
+		if err := s.db.Connect(0, 25); err != nil {
 			log.Errorf("%v", err)
 			s.Stop()
 			return

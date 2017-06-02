@@ -12,14 +12,43 @@ service API {
     rpc CountObjects(GetObjectMsg) returns (ObjectCountResponse);
     rpc GetIdentity(GetIdentityMsg) returns (ObjectResponse);
     rpc CreateMapping(CreateMappingMsg) returns (CreateMappingResponse);
+    rpc GetMapping(GetMappingMsg) returns (GetMappingResponse);
+    rpc GetAllMapping(GetAllMappingMsg) returns (GetAllMappingResponse);
+}
+
+// GetAllMappingMsg represents a request for recent mappings
+message GetAllMappingMsg {
+    string name = 1           [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"']; 
+    int32 limit = 2           [(gogoproto.jsontag) = "limit,omitempty", (gogoproto.moretags) = 'structs:"limit,omitempty" mapstructure:"limit,omitempty"']; 
+}
+
+// Mapping represents a single mapping
+message Mapping {
+    string name = 1          [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"']; 
+    bytes mapping = 2        [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
+}
+
+// GetAllMappingResponse represents a response container all mappings encoded in JSON
+message GetAllMappingResponse {
+    repeated Mapping mappings = 1        [(gogoproto.jsontag) = "mappings,omitempty", (gogoproto.moretags) = 'structs:"mappings,omitempty" mapstructure:"mappings,omitempty"']; 
+}
+
+// GetMappingMsg represents a request for a mapping
+message GetMappingMsg {
+    string name = 1          [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"']; 
+}
+
+// GetMappingResponse represents a response containing a mapping
+message GetMappingResponse {
+    bytes mapping = 1          [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
 }
 
 // CreateMappingMsg represents mapping creation parameters
 message CreateMappingMsg {
     // The name of the mapping
-    string Name = 2         [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"']; 
+    string name = 2         [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"']; 
     // JSON mapping structure as bytes
-    bytes Mapping = 1          [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"'];
+    bytes mapping = 1          [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"'];
 }
 
 message CreateMappingResponse {

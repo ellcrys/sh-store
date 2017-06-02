@@ -14,6 +14,7 @@ import (
 	"github.com/labstack/gommon/log"
 	"github.com/ncodes/cocoon/core/config"
 	"github.com/ncodes/patchain"
+	"github.com/ncodes/patchain/object"
 	"github.com/ncodes/safehold/servers/common"
 	"github.com/ncodes/safehold/servers/oauth"
 	"github.com/ncodes/safehold/servers/proto_rpc"
@@ -52,7 +53,9 @@ func (s *HTTP) getRouter() *mux.Router {
 	// v1 endpoints
 	g.HandleFunc("/identities", common.EasyHandle(http.MethodPost, s.createIdentity))
 	g.HandleFunc("/identities/{id}", common.EasyHandle(http.MethodGet, s.getIdentity))
-	g.HandleFunc("/mappings", common.EasyHandle(http.MethodPost, s.createMapping))
+	g.HandleFunc("/mappings", common.EasyHandle(http.MethodPost, s.createMapping)).Methods(http.MethodPost)
+	g.HandleFunc("/mappings", common.EasyHandle(http.MethodGet, s.getAllMapping)).Methods(http.MethodGet)
+	g.HandleFunc("/mappings/{name}", common.EasyHandle(http.MethodGet, s.getMapping))
 	g.HandleFunc("/sessions", common.EasyHandle(http.MethodPost, s.createSession))
 	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodGet, s.getSession)).Methods(http.MethodGet)
 	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodDelete, s.deleteSession)).Methods(http.MethodDelete)
@@ -262,6 +265,76 @@ func (s *HTTP) createMapping(w http.ResponseWriter, r *http.Request) (interface{
 	}
 
 	return resp, 201
+}
+
+// getMapping fetches a mapping belonging to the logged in developer
+func (s *HTTP) getMapping(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+	var err error
+	var md metadata.MD
+	var resp *proto_rpc.GetMappingResponse
+
+	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
+		authorization := r.Header.Get("Authorization")
+		if len(authorization) > 0 {
+			md = metadata.Pairs("authorization", authorization)
+		}
+		ctx := metadata.NewContext(context.Background(), md)
+		resp, err = client.GetMapping(ctx, &proto_rpc.GetMappingMsg{
+			Name: mux.Vars(r)["name"],
+		})
+		return err
+	}); err != nil {
+		log.Errorf("%+v", err)
+		return err, 0
+	}
+
+	var respMap map[string]interface{}
+	if err := util.FromJSON(resp.Mapping, &respMap); err != nil {
+		logHTTP.Errorf("%+v", errors.Wrap(err, "failed to parse response to json"))
+		return common.ServerError, 500
+	}
+
+	return respMap, 200
+}
+
+// getAllMapping fetches the most recent mappings belonging to the logged in developer
+func (s *HTTP) getAllMapping(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+	var err error
+	var md metadata.MD
+	var resp *proto_rpc.GetAllMappingResponse
+
+	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
+		authorization := r.Header.Get("Authorization")
+		if len(authorization) > 0 {
+			md = metadata.Pairs("authorization", authorization)
+		}
+		ctx := metadata.NewContext(context.Background(), md)
+		resp, err = client.GetAllMapping(ctx, &proto_rpc.GetAllMappingMsg{
+			Limit: 50,
+			Name:  r.URL.Query().Get("name"),
+		})
+		return err
+	}); err != nil {
+		log.Errorf("%+v", err)
+		return err, 0
+	}
+
+	var respMaps []map[string]interface{}
+	for _, mapping := range resp.Mappings {
+		_, name, _ := object.SplitKey(mapping.Name)
+		var _mapping = map[string]interface{}{
+			"name": name,
+		}
+		var mappingMap map[string]interface{}
+		if err := util.FromJSON(mapping.Mapping, &mappingMap); err != nil {
+			logHTTP.Errorf("%+v", errors.Wrap(err, "failed to parse response to json"))
+			return common.ServerError, 500
+		}
+		_mapping["mapping"] = mappingMap
+		respMaps = append(respMaps, _mapping)
+	}
+
+	return respMaps, 200
 }
 
 // getIdentity gets an identity

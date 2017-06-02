@@ -59,7 +59,7 @@ func (s *RPC) CreateIdentity(ctx context.Context, req *proto_rpc.CreateIdentityM
 	objHandler := object.NewObject(s.db)
 
 	// get existing identity
-	existingIdentity, err := objHandler.GetLast(&tables.Object{OwnerID: systemIdentity.ID, QueryParams: patchain.KeyStartsWith(object.MakeIdentityKey(req.Email))})
+	existingIdentity, err := objHandler.GetLast(&tables.Object{OwnerID: systemIdentity.ID, Key: object.MakeIdentityKey(req.Email)})
 	if err != nil {
 		if err != patchain.ErrNotFound {
 			return nil, common.ServerError

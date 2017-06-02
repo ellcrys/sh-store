@@ -409,26 +409,26 @@
 		{
 			"checksumSHA1": "Q9kfZKB0Uha2KACjzeLrIJC9pLM=",
 			"path": "github.com/ncodes/patchain",
-			"revision": "72437a25156428d730e3c1969ba69e9e9f9b773d",
-			"revisionTime": "2017-06-01T15:28:10Z"
+			"revision": "b113dc5a99038874e23c4cbe28df5abd8653c078",
+			"revisionTime": "2017-06-02T10:29:10Z"
 		},
 		{
 			"checksumSHA1": "MOv39JUGMZjlVdHZdOJE0UJK7HY=",
 			"path": "github.com/ncodes/patchain/cockroach",
-			"revision": "72437a25156428d730e3c1969ba69e9e9f9b773d",
-			"revisionTime": "2017-06-01T15:28:10Z"
+			"revision": "b113dc5a99038874e23c4cbe28df5abd8653c078",
+			"revisionTime": "2017-06-02T10:29:10Z"
 		},
 		{
 			"checksumSHA1": "816wG0+O7TL+1UNcspDim20RBNg=",
 			"path": "github.com/ncodes/patchain/cockroach/tables",
-			"revision": "72437a25156428d730e3c1969ba69e9e9f9b773d",
-			"revisionTime": "2017-06-01T15:28:10Z"
+			"revision": "b113dc5a99038874e23c4cbe28df5abd8653c078",
+			"revisionTime": "2017-06-02T10:29:10Z"
 		},
 		{
-			"checksumSHA1": "t4Hxbw7H+E1aBNgQrZGJVZBBEZc=",
+			"checksumSHA1": "W81r6k5xbtzunAsZsVsIULcScKQ=",
 			"path": "github.com/ncodes/patchain/object",
-			"revision": "72437a25156428d730e3c1969ba69e9e9f9b773d",
-			"revisionTime": "2017-06-01T15:28:10Z"
+			"revision": "b113dc5a99038874e23c4cbe28df5abd8653c078",
+			"revisionTime": "2017-06-02T10:29:10Z"
 		},
 		{
 			"checksumSHA1": "H13GerMtrITJWBV8Fgo2ONusNKQ=",

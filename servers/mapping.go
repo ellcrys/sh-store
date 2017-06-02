@@ -4,7 +4,10 @@ import (
 	"fmt"
 
 	"github.com/ellcrys/util"
+	"github.com/labstack/gommon/log"
+	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach"
+	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
 	"github.com/ncodes/safehold/servers/common"
 	"github.com/ncodes/safehold/servers/proto_rpc"
@@ -120,10 +123,99 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 		Done:   make(chan struct{}),
 	})
 	if err != nil {
+		s.dbSession.RollbackEnd(fullSessionID)
 		return nil, common.ServerError
 	}
 
 	return &proto_rpc.CreateMappingResponse{
 		Name: req.Name,
+	}, nil
+}
+
+// GetMapping fetches a mapping belonging to the logged in developer
+func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*proto_rpc.GetMappingResponse, error) {
+
+	developerID := ctx.Value(CtxIdentity).(string)
+
+	if len(req.Name) == 0 {
+		return nil, common.NewSingleAPIErr(400, "", "id", "name is required", nil)
+	}
+
+	fullSessionID := makeDBSessionID(developerID, util.UUID4())
+	s.dbSession.CreateUnregisteredSession(fullSessionID, developerID)
+	defer s.dbSession.CommitEnd(fullSessionID)
+
+	var mapping tables.Object
+	err := s.dbSession.SendOp(fullSessionID, &session.Op{
+		OpType: session.OpGetObjects,
+		Data: `{ 
+			"key": "` + object.MakeMappingKey(req.Name) + `", 
+			"owner_id": "` + developerID + `" 
+		}`,
+		OrderBy: "timestamp desc",
+		Limit:   1,
+		Out:     &mapping,
+		Done:    make(chan struct{}),
+	})
+	if err != nil {
+		if err == patchain.ErrNotFound {
+			return nil, common.NewSingleAPIErr(404, "", "", "mapping not found", nil)
+		}
+		log.Errorf("%+v", err)
+		return nil, common.ServerError
+	}
+
+	return &proto_rpc.GetMappingResponse{
+		Mapping: []byte(mapping.Value),
+	}, nil
+}
+
+// GetAllMapping fetches the most recent mappings belonging to the logged in developer
+func (s *RPC) GetAllMapping(ctx context.Context, req *proto_rpc.GetAllMappingMsg) (*proto_rpc.GetAllMappingResponse, error) {
+	developerID := ctx.Value(CtxIdentity).(string)
+
+	if req.Limit == 0 {
+		req.Limit = 50
+	}
+
+	fullSessionID := makeDBSessionID(developerID, util.UUID4())
+	s.dbSession.CreateUnregisteredSession(fullSessionID, developerID)
+	defer s.dbSession.CommitEnd(fullSessionID)
+
+	var expr = `{ "$sw": "` + object.MappingPrefix + `" }`
+	if len(req.Name) > 0 {
+		expr = `{ "$eq": "` + object.MakeMappingKey(req.Name) + `" }`
+	}
+
+	var mappings []tables.Object
+	err := s.dbSession.SendOp(fullSessionID, &session.Op{
+		OpType: session.OpGetObjects,
+		Data: `{ 
+			"key":` + expr + `, 
+			"owner_id": "` + developerID + `" 
+		}`,
+		OrderBy: "timestamp desc",
+		Limit:   int(req.Limit),
+		Out:     &mappings,
+		Done:    make(chan struct{}),
+	})
+	if err != nil {
+		if err == patchain.ErrNotFound {
+			return nil, common.NewSingleAPIErr(404, "", "", "mapping not found", nil)
+		}
+		log.Errorf("%+v", err)
+		return nil, common.ServerError
+	}
+
+	var result []*proto_rpc.Mapping
+	for _, m := range mappings {
+		result = append(result, &proto_rpc.Mapping{
+			Name:    m.Key,
+			Mapping: []byte(m.Value),
+		})
+	}
+
+	return &proto_rpc.GetAllMappingResponse{
+		Mappings: result,
 	}, nil
 }

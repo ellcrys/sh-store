@@ -75,7 +75,8 @@ func TestAgent(t *testing.T) {
 		Convey(".put", func() {
 			Convey("Should return error if Begin() has not been called", func() {
 				a := NewAgent(cdb, make(chan *Op))
-				err := a.put(tables.Object{})
+				a.curOp = &Op{Data: tables.Object{}}
+				err := a.put()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "agent has not started. Did you call Begin()?")
 			})
@@ -84,16 +85,16 @@ func TestAgent(t *testing.T) {
 		Convey(".get", func() {
 			Convey("Should return error if Begin() has not been called", func() {
 				a := NewAgent(cdb, make(chan *Op))
-				err := a.get(nil, nil)
+				err := a.get()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "agent has not started. Did you call Begin()?")
 			})
 
-			Convey("Should return error if `op` argument is nil", func() {
+			Convey("Should return error if `curOp` of agent is nil", func() {
 				a := NewAgent(cdb, make(chan *Op))
 				go a.Begin(nil)
 				time.Sleep(10 * time.Millisecond)
-				err := a.get(nil, nil)
+				err := a.get()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "operation object is required")
 			})
@@ -102,7 +103,8 @@ func TestAgent(t *testing.T) {
 				a := NewAgent(cdb, make(chan *Op))
 				go a.Begin(nil)
 				time.Sleep(10 * time.Millisecond)
-				err := a.get(&Op{Data: "{"}, nil)
+				a.curOp = &Op{Data: "{"}
+				err := a.get()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "query must be a json string")
 			})
@@ -111,7 +113,8 @@ func TestAgent(t *testing.T) {
 				a := NewAgent(cdb, make(chan *Op))
 				go a.Begin(nil)
 				time.Sleep(10 * time.Millisecond)
-				err := a.get(&Op{Data: `{ "$not": [] }`}, nil)
+				a.curOp = &Op{Data: `{ "$not": [] }`}
+				err := a.get()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "failed to parse query: unknown top level operator: $not")
 			})
@@ -120,34 +123,36 @@ func TestAgent(t *testing.T) {
 		Convey(".count", func() {
 			Convey("Should return error if Begin() has not been called", func() {
 				a := NewAgent(cdb, make(chan *Op))
-				err := a.count(nil, nil)
+				err := a.count()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "agent has not started. Did you call Begin()?")
 			})
 
-			Convey("Should return error if `op` argument is nil", func() {
+			Convey("Should return error if `curOp` of agent is nil", func() {
 				a := NewAgent(cdb, make(chan *Op))
 				go a.Begin(nil)
 				time.Sleep(10 * time.Millisecond)
-				err := a.count(nil, nil)
+				err := a.count()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "operation object is required")
 			})
 
 			Convey("Should return error if query is not valid json", func() {
 				a := NewAgent(cdb, make(chan *Op))
+				a.curOp = &Op{Data: "{"}
 				go a.Begin(nil)
 				time.Sleep(10 * time.Millisecond)
-				err := a.count(&Op{Data: "{"}, nil)
+				err := a.count()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "query must be a json string")
 			})
 
 			Convey("Should return error if json query was not parsed", func() {
 				a := NewAgent(cdb, make(chan *Op))
+				a.curOp = &Op{Data: `{ "$not": [] }`}
 				go a.Begin(nil)
 				time.Sleep(10 * time.Millisecond)
-				err := a.count(&Op{Data: `{ "$not": [] }`}, nil)
+				err := a.count()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "failed to parse query: unknown top level operator: $not")
 			})
@@ -220,7 +225,7 @@ func TestAgent(t *testing.T) {
 			})
 		})
 
-		Convey(".removeAgentRef", func() {
+		Convey(".removeAgent", func() {
 			session := NewSession(sessionReg)
 			session.SetDB(cdb)
 
@@ -229,7 +234,7 @@ func TestAgent(t *testing.T) {
 				sid, err := session.CreateSession(sid, "")
 				So(err, ShouldBeNil)
 				So(sid, ShouldNotBeEmpty)
-				session.removeAgentRef(sid)
+				session.removeAgent(sid)
 				So(len(session.agents), ShouldEqual, 0)
 			})
 
@@ -243,7 +248,7 @@ func TestAgent(t *testing.T) {
 			})
 		})
 
-		Convey(".RemoveAgent", func() {
+		Convey(".End", func() {
 			Convey("Should remove agent from memory and registry", func() {
 				sid := "abc"
 				session := NewSession(sessionReg)
@@ -251,7 +256,7 @@ func TestAgent(t *testing.T) {
 				sid, err := session.CreateSession(sid, "")
 				So(err, ShouldBeNil)
 				So(session.HasSession(sid), ShouldEqual, true)
-				session.RemoveAgent(sid)
+				session.End(sid)
 				So(session.HasSession(sid), ShouldEqual, false)
 				regItem, err := session.sessionReg.Get(sid)
 				So(regItem, ShouldBeNil)

@@ -71,6 +71,11 @@ func (s *Session) HasSession(id string) bool {
 	return false
 }
 
+// GetAgents returns all agents
+func (s *Session) GetAgents() map[string]*Agent {
+	return s.agents
+}
+
 // GetAgent gets a session agent. Returns nil if session does not exists
 func (s *Session) GetAgent(id string) *Agent {
 	if s.HasSession(id) {
@@ -84,6 +89,7 @@ func (s *Session) GetAgent(id string) *Agent {
 // SendOp sends an operation to a session agent
 func (s *Session) SendOp(id string, op *Op) error {
 	agent := s.GetAgent(id)
+
 	if agent == nil {
 		return fmt.Errorf("session not found")
 	}
@@ -113,22 +119,22 @@ func (s *Session) Stop() {
 	defer s.Unlock()
 	for sid, agent := range s.agents {
 		agent.Stop()
-		s.RemoveAgent(sid)
+		s.End(sid)
 	}
 }
 
-// remove an agent reference
-func (s *Session) removeAgentRef(id string) {
+// removeAgent an agent reference
+func (s *Session) removeAgent(id string) {
 	s.Lock()
 	defer s.Unlock()
 	delete(s.agents, id)
 }
 
-// RemoveAgent stops and removes an agent from memory and registry
-func (s *Session) RemoveAgent(id string) {
+// End stops and removes an agent from memory and registry
+func (s *Session) End(id string) {
 	if s.HasSession(id) {
 		s.GetAgent(id).Stop()
-		s.removeAgentRef(id)
+		s.removeAgent(id)
 		s.sessionReg.Del(id) // delete from session registry
 	}
 }
@@ -138,7 +144,7 @@ func (s *Session) RemoveAgent(id string) {
 func (s *Session) CommitEnd(id string) {
 	if s.HasSession(id) {
 		s.GetAgent(id).commit()
-		s.RemoveAgent(id)
+		s.End(id)
 	}
 }
 
@@ -147,7 +153,7 @@ func (s *Session) CommitEnd(id string) {
 func (s *Session) RollbackEnd(id string) {
 	if s.HasSession(id) {
 		s.GetAgent(id).rollback()
-		s.RemoveAgent(id)
+		s.End(id)
 	}
 }
 
@@ -176,7 +182,7 @@ func (s *Session) createSession(id, identityID string, registered bool) (string,
 	msgChan := make(chan *Op)
 	agent := NewAgent(s.db.NewDB(), msgChan)
 	go agent.Begin(func() { // on stop
-		s.RemoveAgent(id) // remove agent
+		s.End(id) // remove agent
 	})
 
 	s.Lock()
@@ -185,7 +191,7 @@ func (s *Session) createSession(id, identityID string, registered bool) (string,
 
 	if registered {
 		if err := s.registerSession(id, identityID); err != nil {
-			s.RemoveAgent(id)
+			s.End(id)
 			return "", fmt.Errorf("failed to register session")
 		}
 	}

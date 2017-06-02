@@ -163,6 +163,7 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 	if err := s.dbSession.SendOp(fullSessionID, sessionOp); err != nil {
 		logRPC.Errorf("%+v", err)
+		// s.dbSession.RollbackEnd(fullSessionID)
 		return nil, common.NewSingleAPIErr(500, common.CodePutError, "objects", err.Error(), nil)
 	}
 

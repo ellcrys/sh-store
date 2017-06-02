@@ -35,6 +35,9 @@ var (
 
 	// MaxSessionIdleTime is the maximum duration a session can be idle before stopping
 	MaxSessionIdleTime = 10 * time.Minute
+
+	// ErrAgentBusy represents an agent in busy state
+	ErrAgentBusy = fmt.Errorf("agent is busy")
 )
 
 // Op represents an agent operation
@@ -52,6 +55,7 @@ type Op struct {
 // that holds a database session
 type Agent struct {
 	opChan     chan *Op
+	curOp      *Op
 	db         patchain.DB
 	Error      error
 	stop       bool
@@ -79,32 +83,35 @@ func (a *Agent) Reset() {
 
 // Stop stops the current session
 func (a *Agent) Stop() {
+	if a.curOp != nil {
+		a.closeDoneChan(a.curOp)
+	}
 	a.stop = true
 }
 
 // put an object
-func (a *Agent) put(d interface{}) error {
+func (a *Agent) put() error {
 
 	if !a.began {
 		return fmt.Errorf("agent has not started. Did you call Begin()?")
 	}
 
 	var dbOp = patchain.UseDBOption{DB: a.tx}
-	return a.o.Put(d, &dbOp)
+	return a.o.Put(a.curOp.Data, &dbOp)
 }
 
 // get gets objects
-func (a *Agent) get(op *Op, out interface{}) error {
+func (a *Agent) get() error {
 
 	if !a.began {
 		return fmt.Errorf("agent has not started. Did you call Begin()?")
 	}
 
-	if op == nil {
+	if a.curOp == nil {
 		return fmt.Errorf("operation object is required")
 	}
 
-	queryJSON, ok := op.Data.(string)
+	queryJSON, ok := a.curOp.Data.(string)
 	if !ok || !govalidator.IsJSON(queryJSON) {
 		return fmt.Errorf("query must be a json string")
 	}
@@ -120,19 +127,19 @@ func (a *Agent) get(op *Op, out interface{}) error {
 	}
 
 	if a.debug {
-		logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, op.OrderBy, op.Limit)
+		logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, a.curOp.OrderBy, a.curOp.Limit)
 	}
 
 	err = a.tx.GetAll(&tables.Object{
 		QueryParams: patchain.QueryParams{
-			Limit:   op.Limit,
-			OrderBy: op.OrderBy,
+			Limit:   a.curOp.Limit,
+			OrderBy: a.curOp.OrderBy,
 			Expr: patchain.Expr{
 				Expr: sql,
 				Args: args,
 			},
 		},
-	}, out)
+	}, a.curOp.Out)
 
 	if err != nil {
 		return err
@@ -142,17 +149,17 @@ func (a *Agent) get(op *Op, out interface{}) error {
 }
 
 // counts object that match a query
-func (a *Agent) count(op *Op, out interface{}) error {
+func (a *Agent) count() error {
 
 	if !a.began {
 		return fmt.Errorf("agent has not started. Did you call Begin()?")
 	}
 
-	if op == nil {
+	if a.curOp == nil {
 		return fmt.Errorf("operation object is required")
 	}
 
-	queryJSON, ok := op.Data.(string)
+	queryJSON, ok := a.curOp.Data.(string)
 	if !ok || !govalidator.IsJSON(queryJSON) {
 		return fmt.Errorf("query must be a json string")
 	}
@@ -168,19 +175,19 @@ func (a *Agent) count(op *Op, out interface{}) error {
 	}
 
 	if a.debug {
-		logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, op.OrderBy, op.Limit)
+		logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, a.curOp.OrderBy, a.curOp.Limit)
 	}
 
 	err = a.tx.Count(&tables.Object{
 		QueryParams: patchain.QueryParams{
-			Limit:   op.Limit,
-			OrderBy: op.OrderBy,
+			Limit:   a.curOp.Limit,
+			OrderBy: a.curOp.OrderBy,
 			Expr: patchain.Expr{
 				Expr: sql,
 				Args: args,
 			},
 		},
-	}, out)
+	}, a.curOp.Out)
 
 	if err != nil {
 		return err
@@ -216,21 +223,41 @@ func (a *Agent) rollback() {
 	}
 }
 
-// closeDoneChan closes the Op done channel
+// closeDoneChan closes the Op done channel and sets it to nil
 func (a *Agent) closeDoneChan(op *Op) {
-	if op.Done != nil {
+	if op == nil {
+		return
+	}
+	if op.Done != nil && !a.stop {
 		close(op.Done)
+		op.Done = nil
 	}
 }
 
-// Begin starts a database session
+// Begin starts a database transaction session.
+// Only a single operation is allowed to run at any point in time.
+// It closes the operations done/wait channel when it completes
+// and passes any error to the operation
 func (a *Agent) Begin(endCb func()) {
+
 	a.tx = a.db.Begin()
 	a.began = true
+
 	for !a.stop {
 		select {
 		case op := <-a.opChan:
+
+			// if agent is busy, do not accept new operation
+			if a.busy {
+				op.Error = ErrAgentBusy
+				a.closeDoneChan(op)
+				continue
+			}
+
 			a.busy = true
+			a.curOp = op
+
+			// process operations
 			switch op.OpType {
 			case OpCommit:
 				a.commit()
@@ -239,28 +266,31 @@ func (a *Agent) Begin(endCb func()) {
 				a.rollback()
 				a.newTx()
 			case OpPutObjects:
-				op.Error = a.put(op.Data)
+				op.Error = a.put()
 				if op.Error != nil {
 					a.rollback()
 				}
 			case OpGetObjects:
-				op.Error = a.get(op, op.Out)
+				op.Error = a.get()
 				if op.Error != nil {
 					a.rollback()
 				}
 			case OpCountObjects:
-				op.Error = a.count(op, op.Out)
+				op.Error = a.count()
 				if op.Error != nil {
 					a.rollback()
 				}
 			}
+
+			a.busy = false
 			a.closeDoneChan(op)
+
 		case <-time.After(MaxSessionIdleTime):
 			a.rollback()
 			a.Stop()
 		}
-		a.busy = false
 	}
+
 	a.began = false
 
 	if endCb != nil {

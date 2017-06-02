@@ -84,7 +84,7 @@ func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 
 	// check if session exists locally, if so, delete immediately
 	if s.dbSession.HasSession(sessionID) {
-		s.dbSession.RemoveAgent(sessionID)
+		s.dbSession.End(sessionID)
 		return req, nil
 	}
 
