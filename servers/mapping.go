@@ -43,49 +43,10 @@ func validateMapping(mapping map[string]interface{}) []common.Error {
 					Message: fmt.Sprintf("column name '%s' is unknown", data),
 				})
 			}
-		case map[string]interface{}:
-			if data["field"] == nil {
-				errs = append(errs, common.Error{
-					Field:   mapField,
-					Message: "'field' property is required",
-				})
-				continue
-			}
-			field, ok := data["field"].(string)
-			if !ok {
-				errs = append(errs, common.Error{
-					Field:   fmt.Sprintf("%s.field", mapField),
-					Message: "invalid value type. Expected string type",
-				})
-				continue
-			}
-			if len(field) == 0 {
-				errs = append(errs, common.Error{
-					Field:   fmt.Sprintf("%s.field", mapField),
-					Message: fmt.Sprintf("column name is required"),
-				})
-				continue
-			}
-			if !util.InStringSlice(validObjectFields, field) {
-				errs = append(errs, common.Error{
-					Field:   fmt.Sprintf("%s.field", mapField),
-					Message: fmt.Sprintf("column name '%s' is unknown", field),
-				})
-				continue
-			}
-			if data["protected"] != nil {
-				if _, ok := data["protected"].(bool); !ok {
-					errs = append(errs, common.Error{
-						Field:   fmt.Sprintf("%s.protected", mapField),
-						Message: "invalid value type. Expected boolean type",
-					})
-				}
-				continue
-			}
 		default:
 			errs = append(errs, common.Error{
 				Field:   mapField,
-				Message: "invalid value type. Expected string or json type",
+				Message: "invalid value type. Expected string type",
 			})
 		}
 	}

@@ -517,7 +517,7 @@ func TestRPC(t *testing.T) {
 					errs := validateMapping(mapping)
 					So(errs, ShouldNotBeEmpty)
 					So(errs[0].Field, ShouldEqual, "custom_field")
-					So(errs[0].Message, ShouldEqual, "invalid value type. Expected string or json type")
+					So(errs[0].Message, ShouldEqual, "invalid value type. Expected string type")
 				})
 
 				Convey("Case 2: returns error if custom field is mapped to an unknown column", func() {
@@ -528,41 +528,6 @@ func TestRPC(t *testing.T) {
 					So(errs, ShouldNotBeEmpty)
 					So(errs[0].Field, ShouldEqual, "custom_field")
 					So(errs[0].Message, ShouldEqual, "column name 'unknown_column' is unknown")
-				})
-
-				Convey("Case 3: returns error if custom field with map value has no `field` property", func() {
-					mapping := map[string]interface{}{
-						"custom_field": map[string]interface{}{},
-					}
-					errs := validateMapping(mapping)
-					So(errs, ShouldNotBeEmpty)
-					So(errs[0].Field, ShouldEqual, "custom_field")
-					So(errs[0].Message, ShouldEqual, "'field' property is required")
-				})
-
-				Convey("Case 4: returns error if `custom_field.field` has invalid value type", func() {
-					mapping := map[string]interface{}{
-						"custom_field": map[string]interface{}{
-							"field": 1,
-						},
-					}
-					errs := validateMapping(mapping)
-					So(errs, ShouldNotBeEmpty)
-					So(errs[0].Field, ShouldEqual, "custom_field.field")
-					So(errs[0].Message, ShouldEqual, "invalid value type. Expected string type")
-				})
-
-				Convey("Case 5: returns error if `custom_field.protected` property has invalid value type", func() {
-					mapping := map[string]interface{}{
-						"custom_field": map[string]interface{}{
-							"field":     "id",
-							"protected": 1,
-						},
-					}
-					errs := validateMapping(mapping)
-					So(errs, ShouldNotBeEmpty)
-					So(errs[0].Field, ShouldEqual, "custom_field.protected")
-					So(errs[0].Message, ShouldEqual, "invalid value type. Expected boolean type")
 				})
 			})
 
