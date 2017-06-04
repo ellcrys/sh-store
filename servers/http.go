@@ -204,27 +204,33 @@ func (s *HTTP) createIdentity(w http.ResponseWriter, r *http.Request) (interface
 }
 
 // createObjects creates an arbitrary object.
-// Requires an app token included in the authorization header
+// Requires an app token included in the authorization header.
+// If mapping name is provided, pass the mapping name and body encoded in json to rpc.CreateObjects
+// so that it can process/unmap the custom/mapped fields in the request body.
+// Otherwise, copy the body into a slice of proto_rpc.Object and pass this.
 func (s *HTTP) createObjects(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 
 	var err error
-	var body []*proto_rpc.Object
+	var bodyJSON []map[string]interface{}
 	var resp *proto_rpc.MultiObjectResponse
+	var mappingName = r.URL.Query().Get("mapping")
+	var sessionID = r.URL.Query().Get("session")
+	var md = metadata.Join(metadata.Pairs("session_id", sessionID))
+	var authorization = r.Header.Get("Authorization")
 
-	if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err = json.NewDecoder(r.Body).Decode(&bodyJSON); err != nil {
 		return common.BodyMalformedError, 400
 	}
 
-	var sessionID = r.URL.Query().Get("session")
-
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		var md = metadata.Join(metadata.Pairs("session_id", sessionID))
-		authorization := r.Header.Get("Authorization")
 		if len(authorization) > 0 {
 			md = metadata.Join(md, metadata.Pairs("authorization", authorization))
 		}
 		ctx := metadata.NewContext(context.Background(), md)
-		resp, err = client.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Objects: body})
+		resp, err = client.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{
+			Objects: util.MustStringify(bodyJSON),
+			Mapping: mappingName,
+		})
 		return err
 	}); err != nil {
 		log.Errorf("%+v", err)

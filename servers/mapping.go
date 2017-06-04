@@ -16,7 +16,7 @@ import (
 )
 
 // validateMapping checks whether a map is valid
-func validateMapping(mapping map[string]interface{}) []common.Error {
+func validateMapping(mapping map[string]string) []common.Error {
 	var errs []common.Error
 	validObjectFields := cockroach.NewDB().GetValidObjectFields()
 
@@ -28,25 +28,17 @@ func validateMapping(mapping map[string]interface{}) []common.Error {
 	}
 
 	for mapField, fieldData := range mapping {
-		switch data := fieldData.(type) {
-		case string:
-			if len(data) == 0 {
-				errs = append(errs, common.Error{
-					Field:   mapField,
-					Message: fmt.Sprintf("column name is required"),
-				})
-				continue
-			}
-			if !util.InStringSlice(validObjectFields, data) {
-				errs = append(errs, common.Error{
-					Field:   mapField,
-					Message: fmt.Sprintf("column name '%s' is unknown", data),
-				})
-			}
-		default:
+		if len(fieldData) == 0 {
 			errs = append(errs, common.Error{
 				Field:   mapField,
-				Message: "invalid value type. Expected string type",
+				Message: fmt.Sprintf("column name is required"),
+			})
+			continue
+		}
+		if !util.InStringSlice(validObjectFields, fieldData) {
+			errs = append(errs, common.Error{
+				Field:   mapField,
+				Message: fmt.Sprintf("column name '%s' is unknown", fieldData),
 			})
 		}
 	}
@@ -62,7 +54,7 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 		req.Name = util.UUID4()
 	}
 
-	var mapping map[string]interface{}
+	var mapping map[string]string
 	if err := util.FromJSON(req.Mapping, &mapping); err != nil {
 		return nil, common.NewSingleAPIErr(404, "", "", "malformed mapping. Expected json object.", nil)
 	}
@@ -90,6 +82,7 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 
 	return &proto_rpc.CreateMappingResponse{
 		Name: req.Name,
+		ID:   mappingObj.ID,
 	}, nil
 }
 

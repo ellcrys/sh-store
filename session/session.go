@@ -268,3 +268,19 @@ func SendCountOpWithSession(ses *Session, sid, query string, out interface{}) er
 	}
 	return nil
 }
+
+// SendPutOpWithSession sends a PUT operation using an existing session id
+func SendPutOpWithSession(ses *Session, sid string, data interface{}) error {
+	agent := ses.GetAgent(sid)
+	if agent == nil {
+		return fmt.Errorf("session not found")
+	}
+	if err := ses.SendOp(sid, &Op{
+		OpType: OpPutObjects,
+		Data:   data,
+		Done:   make(chan struct{}),
+	}); err != nil {
+		return err
+	}
+	return nil
+}

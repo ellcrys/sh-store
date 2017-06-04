@@ -52,7 +52,8 @@ message CreateMappingMsg {
 }
 
 message CreateMappingResponse {
-    string Name = 1       [(gogoproto.jsontag) = "id,omitempty", (gogoproto.moretags) = 'structs:"id,omitempty" mapstructure:"id,omitempty"'];
+    string Name = 1       [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"'];
+    string ID = 2         [(gogoproto.jsontag) = "id,omitempty", (gogoproto.moretags) = 'structs:"id,omitempty" mapstructure:"id,omitempty"'];
 }
 
 // GetIdentityMsg represents an identity request message
@@ -88,7 +89,12 @@ message DBSession {
 
 // CreateObjects represents a collection of objects to be created
 message CreateObjectsMsg {
-    repeated Object objects = 1     [(gogoproto.jsontag) = "objects,omitempty", (gogoproto.moretags) = 'structs:"objects,omitempty" mapstructure:"objects,omitempty"'];
+    
+    // Must be a slice of Objects encoded in json
+    bytes objects = 1     [(gogoproto.jsontag) = "objects,omitempty", (gogoproto.moretags) = 'structs:"objects,omitempty" mapstructure:"objects,omitempty"'];
+    
+    // Optional mapping to use during object decoding
+    string mapping = 2              [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"'];
 }
 
 // CreateIdentityMsg represents an identity of a person or organization
@@ -120,16 +126,16 @@ message ObjectResponseData {
 // Object describes an object
 message Object {
     string ID = 1              [(gogoproto.jsontag) = "id,omitempty", (gogoproto.moretags) = 'structs:"id,omitempty" mapstructure:"id,omitempty"'];
-    string ownerID = 2         [(gogoproto.jsontag) = "owner_id,omitempty", (gogoproto.moretags) = 'structs:"ownerId,omitempty" mapstructure:"ownerId,omitempty"'];
-    string creatorID = 3       [(gogoproto.jsontag) = "creator_id,omitempty", (gogoproto.moretags) = 'structs:"creatorId,omitempty" mapstructure:"creatorId,omitempty"'];
-    string partitionID = 4     [(gogoproto.jsontag) = "partition_id,omitempty", (gogoproto.moretags) = 'structs:"partitionId,omitempty" mapstructure:"partitionId,omitempty"'];
+    string ownerID = 2         [(gogoproto.jsontag) = "owner_id,omitempty", (gogoproto.moretags) = 'structs:"owner_id,omitempty" mapstructure:"owner_id,omitempty"'];
+    string creatorID = 3       [(gogoproto.jsontag) = "creator_id,omitempty", (gogoproto.moretags) = 'structs:"creator_id,omitempty" mapstructure:"creator_id,omitempty"'];
+    string partitionID = 4     [(gogoproto.jsontag) = "partition_id,omitempty", (gogoproto.moretags) = 'structs:"partition_id,omitempty" mapstructure:"partition_id,omitempty"'];
     string key = 5             [(gogoproto.jsontag) = "key,omitempty", (gogoproto.moretags) = 'structs:"key,omitempty" mapstructure:"key,omitempty"'];
     string value = 6           [(gogoproto.jsontag) = "value,omitempty", (gogoproto.moretags) = 'structs:"value,omitempty" mapstructure:"value,omitempty"'];
     bool protected = 7         [(gogoproto.jsontag) = "protected,omitempty", (gogoproto.moretags) = 'structs:"protected,omitempty" mapstructure:"protected,omitempty"'];
-    bool refOnly = 8           [(gogoproto.jsontag) = "ref_only,omitempty", (gogoproto.moretags) = 'structs:"refOnly,omitempty" mapstructure:"refOnly,omitempty"'];
+    bool refOnly = 8           [(gogoproto.jsontag) = "ref_only,omitempty", (gogoproto.moretags) = 'structs:"ref_only,omitempty" mapstructure:"ref_only,omitempty"'];
     int64 timestamp = 9        [(gogoproto.jsontag) = "timestamp,omitempty", (gogoproto.moretags) = 'structs:"timestamp,omitempty" mapstructure:"timestamp,omitempty"'];
-    string prevHash = 10       [(gogoproto.jsontag) = "prev_hash,omitempty", (gogoproto.moretags) = 'structs:"prevHash,omitempty" mapstructure:"prevHash,omitempty"'];
-    string peerHash = 11       [(gogoproto.jsontag) = "peer_hash,omitempty", (gogoproto.moretags) = 'structs:"peerHash,omitempty" mapstructure:"peerHash,omitempty"'];
+    string prevHash = 10       [(gogoproto.jsontag) = "prev_hash,omitempty", (gogoproto.moretags) = 'structs:"prev_hash,omitempty" mapstructure:"prev_hash,omitempty"'];
+    string peerHash = 11       [(gogoproto.jsontag) = "peer_hash,omitempty", (gogoproto.moretags) = 'structs:"peer_hash,omitempty" mapstructure:"peer_hash,omitempty"'];
     string hash = 12           [(gogoproto.jsontag) = "hash,omitempty", (gogoproto.moretags) = 'structs:"hash,omitempty" mapstructure:"hash,omitempty"'];
     string ref1 = 13           [(gogoproto.jsontag) = "ref1,omitempty", (gogoproto.moretags) = 'structs:"ref1,omitempty" mapstructure:"ref1,omitempty"'];
     string ref2 = 14           [(gogoproto.jsontag) = "ref2,omitempty", (gogoproto.moretags) = 'structs:"ref2,omitempty" mapstructure:"ref2,omitempty"'];

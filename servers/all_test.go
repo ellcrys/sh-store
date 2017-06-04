@@ -181,125 +181,71 @@ func TestRPC(t *testing.T) {
 			err := cdb.Create(owner)
 			So(err, ShouldBeNil)
 
-			Convey("Should test and fail all validations", func() {
-				t := []*proto_rpc.Object{
+			Convey("Should return error if required fields are not provided", func() {
+				t := []map[string]interface{}{
 					{},
 				}
-				errs := rpcServer.validateObjects(t)
-				So(len(errs), ShouldEqual, 1)
-				So(errs[0].Message, ShouldEqual, `object 0: owner id is required`)
-
-				t = []*proto_rpc.Object{
-					{OwnerID: owner.ID},
-				}
-				errs = rpcServer.validateObjects(t)
-				So(len(errs), ShouldEqual, 1)
-				So(errs[0].Message, ShouldEqual, `object 0: key is required`)
-
-				t = []*proto_rpc.Object{
-					{OwnerID: "abc", Key: "some_key"},
-				}
-				errs = rpcServer.validateObjects(t)
-				So(len(errs), ShouldEqual, 1)
-				So(errs[0].Message, ShouldEqual, `object 0: owner id does not exist`)
-
-				t = []*proto_rpc.Object{
-					{OwnerID: owner.ID, Key: "some_key"},
-				}
-				errs = rpcServer.validateObjects(t)
-				So(len(errs), ShouldEqual, 0)
-			})
-		})
-
-		Convey(".CreateObject", func() {
-
-			Convey("Should return error if no object is provided", func() {
-				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
-				req := &proto_rpc.CreateObjectsMsg{}
-				_, err := rpcServer.CreateObjects(ctx, req)
-				So(err, ShouldNotBeNil)
-				So(err.Error(), ShouldEqual, `{"Message":"no object provided. At least one object is required","Errors":{"errors":[{"status":"400","message":"no object provided. At least one object is required"}]},"StatusCode":400}`)
-			})
-
-			Convey("Should return error objects in request exceeds MaxObjectPerPut", func() {
-				MaxObjectPerPut = 2
-				req := &proto_rpc.CreateObjectsMsg{
-					Objects: []*proto_rpc.Object{
-						{ID: "some_id"},
-						{ID: "some_id2"},
-						{ID: "some_id3"},
-					},
-				}
-				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
-				_, err := rpcServer.CreateObjects(ctx, req)
-				So(err, ShouldNotBeNil)
-				So(err.Error(), ShouldEqual, `{"Message":"too many objects. Only a maximum of 2 can be created at once","Errors":{"errors":[{"status":"400","message":"too many objects. Only a maximum of 2 can be created at once"}]},"StatusCode":400}`)
-			})
-
-			Convey("With valid owner identity", func() {
-				ownerID := util.RandString(10)
-				owner := object.MakeIdentityObject(ownerID, ownerID, "e@email.com", "password", true)
-				err := cdb.Create(owner)
+				errs, err := rpcServer.validateObjects(t, nil)
 				So(err, ShouldBeNil)
+				So(len(errs), ShouldEqual, 2)
+				So(errs[0].Message, ShouldEqual, `object 0: owner_id is required`)
+				So(errs[1].Message, ShouldEqual, `object 0: key is required`)
+			})
 
-				Convey("Should return error if developer identity is not permitted to PUT object", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
-					req := &proto_rpc.CreateObjectsMsg{
-						Objects: []*proto_rpc.Object{
-							{ID: "some_id", OwnerID: owner.ID, Key: "some_key"},
-						},
-					}
-					_, err := rpcServer.CreateObjects(ctx, req)
-					So(err, ShouldNotBeNil)
-					So(err.Error(), ShouldEqual, `{"Message":"permission denied: you are not authorized to create objects for the owner","Errors":{"errors":[{"status":"401","message":"permission denied: you are not authorized to create objects for the owner"}]},"StatusCode":401}`)
-				})
+			Convey("Should return error if a field has invalid type", func() {
+				t := []map[string]interface{}{
+					{"owner_id": 1000},
+				}
+				errs, err := rpcServer.validateObjects(t, nil)
+				So(err, ShouldBeNil)
+				So(len(errs), ShouldEqual, 2)
+				So(errs[0].Message, ShouldEqual, `object 0: owner_id must be a string`)
+				So(errs[1].Message, ShouldEqual, `object 0: key is required`)
+			})
 
-				Convey("Should return error if owner of object has no partition", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
-					req := &proto_rpc.CreateObjectsMsg{
-						Objects: []*proto_rpc.Object{
-							{ID: "some_id", OwnerID: owner.ID, Key: "some_key"},
-						},
-					}
-					_, err := rpcServer.CreateObjects(ctx, req)
-					So(err, ShouldNotBeNil)
-					So(err.Error(), ShouldEqual, `{"Message":"failed to put object(s): owner has no partition","Errors":{"errors":[{"status":"500","code":"put_error","field":"objects","message":"failed to put object(s): owner has no partition"}]},"StatusCode":500}`)
-				})
+			Convey("Should return error if required fields are not provided and uses the mapping field in error message", func() {
+				t := []map[string]interface{}{
+					{},
+				}
+				mapping := map[string]string{
+					"user_id":   "owner_id",
+					"recordKey": "key",
+				}
+				errs, err := rpcServer.validateObjects(t, mapping)
+				So(err, ShouldBeNil)
+				So(len(errs), ShouldEqual, 2)
+				So(errs[0].Message, ShouldEqual, `object 0: user_id is required`)
+				So(errs[1].Message, ShouldEqual, `object 0: recordKey is required`)
+			})
 
-				Convey("Should successfully create object belonging to the authenticated identity(developer)", func() {
-					partitions, err := object.NewObject(cdb).CreatePartitions(1, owner.ID, owner.ID)
-					So(err, ShouldBeNil)
-					So(len(partitions), ShouldEqual, 1)
+			Convey("Should return error if owner of objects does not exists", func() {
+				t := []map[string]interface{}{
+					{"owner_id": "abc", "key": "some_key"},
+				}
+				errs, err := rpcServer.validateObjects(t, nil)
+				So(err, ShouldBeNil)
+				So(len(errs), ShouldEqual, 1)
+				So(errs[0].Message, ShouldEqual, `owner of object(s) does not exist`)
+			})
 
-					ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
-					req := &proto_rpc.CreateObjectsMsg{
-						Objects: []*proto_rpc.Object{
-							{ID: "some_id", OwnerID: owner.ID, Key: "some_key"},
-						},
-					}
-					resp, err := rpcServer.CreateObjects(ctx, req)
-					So(err, ShouldBeNil)
-					So(len(resp.Data), ShouldEqual, 1)
-				})
+			Convey("Should return error if objects do not share the same owner id", func() {
+				t := []map[string]interface{}{
+					{"owner_id": owner.ID, "key": "some_key"},
+					{"owner_id": "different_id", "key": "some_key"},
+				}
+				errs, err := rpcServer.validateObjects(t, nil)
+				So(err, ShouldBeNil)
+				So(len(errs), ShouldEqual, 1)
+				So(errs[0].Message, ShouldEqual, `object 1: all objects must share the same owner_id`)
+			})
 
-				Convey("With session id", func() {
-					partitions, err := object.NewObject(cdb).CreatePartitions(1, owner.ID, owner.ID)
-					So(err, ShouldBeNil)
-					So(len(partitions), ShouldEqual, 1)
-
-					Convey("Should return error if session id is not found in in-memory or session registry", func() {
-						ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
-						ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", "unknown"))
-						req := &proto_rpc.CreateObjectsMsg{
-							Objects: []*proto_rpc.Object{
-								{ID: "some_id", OwnerID: owner.ID, Key: "some_key"},
-							},
-						}
-						_, err := rpcServer.CreateObjects(ctx, req)
-						So(err, ShouldNotBeNil)
-						So(err.Error(), ShouldEqual, `{"Message":"session not found","Errors":{"errors":[{"status":"404","message":"session not found"}]},"StatusCode":404}`)
-					})
-				})
+			Convey("Should successfully validate objects", func() {
+				t := []map[string]interface{}{
+					{"owner_id": owner.ID, "key": "some_key"},
+				}
+				errs, err := rpcServer.validateObjects(t, nil)
+				So(err, ShouldBeNil)
+				So(len(errs), ShouldEqual, 0)
 			})
 		})
 
@@ -503,25 +449,15 @@ func TestRPC(t *testing.T) {
 		Convey("Mappings", func() {
 			Convey(".validateMapping", func() {
 				Convey("Case 1: returns error if no mapping is provided", func() {
-					mapping := map[string]interface{}{}
+					mapping := map[string]string{}
 					errs := validateMapping(mapping)
 					So(errs, ShouldNotBeEmpty)
 					So(errs[0].Field, ShouldEqual, "mapping")
 					So(errs[0].Message, ShouldEqual, "requires at least one mapped field")
 				})
 
-				Convey("Case 2: returns error if mapping value type is not string or map", func() {
-					mapping := map[string]interface{}{
-						"custom_field": 2,
-					}
-					errs := validateMapping(mapping)
-					So(errs, ShouldNotBeEmpty)
-					So(errs[0].Field, ShouldEqual, "custom_field")
-					So(errs[0].Message, ShouldEqual, "invalid value type. Expected string type")
-				})
-
 				Convey("Case 2: returns error if custom field is mapped to an unknown column", func() {
-					mapping := map[string]interface{}{
+					mapping := map[string]string{
 						"custom_field": "unknown_column",
 					}
 					errs := validateMapping(mapping)
@@ -565,6 +501,7 @@ func TestRPC(t *testing.T) {
 					})
 					So(err, ShouldBeNil)
 					So(resp.Name, ShouldEqual, "map1")
+					So(resp.ID, ShouldNotBeEmpty)
 
 					Convey(".GetMapping", func() {
 						Convey("Should return error if mapping name is not provided", func() {
@@ -652,5 +589,148 @@ func TestRPC(t *testing.T) {
 				})
 			})
 		})
+
+		Convey(".CreateObject", func() {
+
+			Convey("Should return parsing error if no object data is provided", func() {
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+				req := &proto_rpc.CreateObjectsMsg{}
+				_, err := rpcServer.CreateObjects(ctx, req)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, `{"Message":"failed to parse objects","Errors":{"errors":[{"status":"400","message":"failed to parse objects"}]},"StatusCode":400}`)
+			})
+
+			Convey("Should return error if no object is provided", func() {
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+				req := &proto_rpc.CreateObjectsMsg{
+					Objects: []byte("[]"),
+				}
+				_, err := rpcServer.CreateObjects(ctx, req)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, `{"Message":"validation errors","Errors":{"errors":[{"message":"no object provided. At least one object is required"}]},"StatusCode":400}`)
+			})
+
+			Convey("Should return error if unable to parse json encoded Objects", func() {
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+				req := &proto_rpc.CreateObjectsMsg{
+					Objects: []byte("[{ "),
+				}
+				_, err := rpcServer.CreateObjects(ctx, req)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, `{"Message":"failed to parse objects","Errors":{"errors":[{"status":"400","message":"failed to parse objects"}]},"StatusCode":400}`)
+			})
+
+			Convey("Should return error objects in request exceeds MaxObjectPerPut", func() {
+				MaxObjectPerPut = 2
+				req := &proto_rpc.CreateObjectsMsg{
+					Objects: util.MustStringify([]*proto_rpc.Object{
+						{ID: "some_id"},
+						{ID: "some_id2"},
+						{ID: "some_id3"},
+					}),
+				}
+				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+				_, err := rpcServer.CreateObjects(ctx, req)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, `{"Message":"validation errors","Errors":{"errors":[{"message":"too many objects. Only a maximum of 2 can be created at once"}]},"StatusCode":400}`)
+			})
+
+			Convey("With valid owner identity", func() {
+				ownerID := util.RandString(10)
+				owner := object.MakeIdentityObject(ownerID, ownerID, "e@email.com", "password", true)
+				err := cdb.Create(owner)
+				So(err, ShouldBeNil)
+
+				Convey("Should return error if developer identity is not permitted to PUT object", func() {
+					ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
+					req := &proto_rpc.CreateObjectsMsg{
+						Objects: util.MustStringify([]*proto_rpc.Object{
+							{ID: "some_id", OwnerID: owner.ID, Key: "some_key"},
+						}),
+					}
+					_, err := rpcServer.CreateObjects(ctx, req)
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, `{"Message":"permission denied: you are not authorized to create objects for the owner","Errors":{"errors":[{"status":"401","message":"permission denied: you are not authorized to create objects for the owner"}]},"StatusCode":401}`)
+				})
+
+				Convey("Should return error if owner of object has no partition", func() {
+					ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
+					req := &proto_rpc.CreateObjectsMsg{
+						Objects: util.MustStringify([]*proto_rpc.Object{
+							{ID: "some_id", OwnerID: owner.ID, Key: "some_key"},
+						}),
+					}
+					_, err := rpcServer.CreateObjects(ctx, req)
+					So(err, ShouldNotBeNil)
+					So(err.Error(), ShouldEqual, `{"Message":"failed to put object(s): owner has no partition","Errors":{"errors":[{"status":"500","code":"put_error","field":"objects","message":"failed to put object(s): owner has no partition"}]},"StatusCode":500}`)
+				})
+
+				Convey("Should successfully create object belonging to the authenticated identity(developer)", func() {
+					partitions, err := object.NewObject(cdb).CreatePartitions(1, owner.ID, owner.ID)
+					So(err, ShouldBeNil)
+					So(len(partitions), ShouldEqual, 1)
+
+					ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
+					req := &proto_rpc.CreateObjectsMsg{
+						Objects: util.MustStringify([]*proto_rpc.Object{
+							{ID: "some_id", OwnerID: owner.ID, Key: "some_key"},
+						}),
+					}
+					resp, err := rpcServer.CreateObjects(ctx, req)
+					So(err, ShouldBeNil)
+					So(len(resp.Data), ShouldEqual, 1)
+				})
+
+				Convey("With mapping", func() {
+					mapName := util.RandString(5)
+					mapObj := object.MakeMappingObject(owner.ID, mapName, `{ "my_key": "key", "my_val": "value" }`)
+					err = cdb.Create(mapObj)
+					So(err, ShouldBeNil)
+
+					Convey("Should successfully unmap and create the object with valid fields", func() {
+						partitions, err := object.NewObject(cdb).CreatePartitions(1, owner.ID, owner.ID)
+						So(err, ShouldBeNil)
+						So(len(partitions), ShouldEqual, 1)
+
+						ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
+						req := &proto_rpc.CreateObjectsMsg{
+							Mapping: mapName,
+							Objects: util.MustStringify([]map[string]interface{}{{
+								"owner_id": owner.ID,
+								"id":       "some_id_abc",
+								"my_key":   "my_key",
+								"my_val":   "my_val",
+							}}),
+						}
+						resp, err := rpcServer.CreateObjects(ctx, req)
+						So(err, ShouldBeNil)
+						So(len(resp.Data), ShouldEqual, 1)
+						So(resp.Data[0].ID, ShouldEqual, "some_id_abc")
+						So(resp.Data[0].Attributes.Key, ShouldEqual, "my_key")
+						So(resp.Data[0].Attributes.Value, ShouldEqual, "my_val")
+					})
+				})
+
+				Convey("With session id", func() {
+					partitions, err := object.NewObject(cdb).CreatePartitions(1, owner.ID, owner.ID)
+					So(err, ShouldBeNil)
+					So(len(partitions), ShouldEqual, 1)
+
+					Convey("Should return error if session id is not found in in-memory or session registry", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
+						ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", "unknown"))
+						req := &proto_rpc.CreateObjectsMsg{
+							Objects: util.MustStringify([]*proto_rpc.Object{
+								{ID: "some_id", OwnerID: owner.ID, Key: "some_key"},
+							}),
+						}
+						_, err := rpcServer.CreateObjects(ctx, req)
+						So(err, ShouldNotBeNil)
+						So(err.Error(), ShouldEqual, `{"Message":"session not found","Errors":{"errors":[{"status":"404","message":"session not found"}]},"StatusCode":404}`)
+					})
+				})
+			})
+		})
+
 	})
 }
