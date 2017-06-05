@@ -266,17 +266,24 @@ func (s *HTTP) getMapping(w http.ResponseWriter, r *http.Request) (interface{}, 
 		return common.ServerError, 500
 	}
 
-	return respMap, 200
+	var mapping map[string]interface{}
+	util.FromJSON([]byte(respMap["value"].(string)), &mapping)
+
+	return common.SingleObjectResp("mapping", map[string]interface{}{
+		"id":      respMap["id"],
+		"name":    mux.Vars(r)["name"],
+		"mapping": mapping,
+	}), 200
 }
 
 // getAllMapping fetches the most recent mappings belonging to the logged in developer
 func (s *HTTP) getAllMapping(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
 	var md metadata.MD
+	var authorization = r.Header.Get("Authorization")
 	var resp *proto_rpc.GetAllMappingResponse
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		authorization := r.Header.Get("Authorization")
 		if len(authorization) > 0 {
 			md = metadata.Pairs("authorization", authorization)
 		}
@@ -292,21 +299,21 @@ func (s *HTTP) getAllMapping(w http.ResponseWriter, r *http.Request) (interface{
 	}
 
 	var respMaps []map[string]interface{}
-	for _, mapping := range resp.Mappings {
-		_, name, _ := object.SplitKey(mapping.Name)
-		var _mapping = map[string]interface{}{
-			"name": name,
+	util.FromJSON(resp.Mappings, &respMaps)
+	attrs := make([]map[string]interface{}, len(respMaps))
+
+	for i, mapping := range respMaps {
+		var mappingVal map[string]string
+		util.FromJSON([]byte(mapping["value"].(string)), &mappingVal)
+		_, name, _ := object.SplitKey(mapping["key"].(string))
+		attrs[i] = map[string]interface{}{
+			"id":      mapping["id"],
+			"name":    name,
+			"mapping": mappingVal,
 		}
-		var mappingMap map[string]interface{}
-		if err := util.FromJSON(mapping.Mapping, &mappingMap); err != nil {
-			logHTTP.Errorf("%+v", errors.Wrap(err, "failed to parse response to json"))
-			return common.ServerError, 500
-		}
-		_mapping["mapping"] = mappingMap
-		respMaps = append(respMaps, _mapping)
 	}
 
-	return respMaps, 200
+	return common.MultiObjectResp("mapping", attrs), 200
 }
 
 // getIdentity gets an identity

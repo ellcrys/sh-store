@@ -22,15 +22,9 @@ message GetAllMappingMsg {
     int32 limit = 2           [(gogoproto.jsontag) = "limit,omitempty", (gogoproto.moretags) = 'structs:"limit,omitempty" mapstructure:"limit,omitempty"']; 
 }
 
-// Mapping represents a single mapping
-message Mapping {
-    string name = 1          [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"']; 
-    bytes mapping = 2        [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
-}
-
 // GetAllMappingResponse represents a response container all mappings encoded in JSON
 message GetAllMappingResponse {
-    repeated Mapping mappings = 1        [(gogoproto.jsontag) = "mappings,omitempty", (gogoproto.moretags) = 'structs:"mappings,omitempty" mapstructure:"mappings,omitempty"']; 
+    bytes mappings = 1        [(gogoproto.jsontag) = "mappings,omitempty", (gogoproto.moretags) = 'structs:"mappings,omitempty" mapstructure:"mappings,omitempty"']; 
 }
 
 // GetMappingMsg represents a request for a mapping

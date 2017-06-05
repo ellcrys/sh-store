@@ -147,7 +147,7 @@ func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*pr
 	}
 
 	return &proto_rpc.GetMappingResponse{
-		Mapping: []byte(mapping.Value),
+		Mapping: util.MustStringify(mapping),
 	}, nil
 }
 
@@ -188,15 +188,7 @@ func (s *RPC) GetAllMapping(ctx context.Context, req *proto_rpc.GetAllMappingMsg
 		return nil, common.ServerError
 	}
 
-	var result []*proto_rpc.Mapping
-	for _, m := range mappings {
-		result = append(result, &proto_rpc.Mapping{
-			Name:    m.Key,
-			Mapping: []byte(m.Value),
-		})
-	}
-
 	return &proto_rpc.GetAllMappingResponse{
-		Mappings: result,
+		Mappings: util.MustStringify(mappings),
 	}, nil
 }
