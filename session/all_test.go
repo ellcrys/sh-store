@@ -278,9 +278,9 @@ func TestAgent(t *testing.T) {
 				sid := "abc"
 				sid, err := session.CreateSession(sid, "")
 				So(err, ShouldBeNil)
-				agent := session.GetAgent(sid)
-				So(agent, ShouldNotBeNil)
-				agent.busy = true
+				agentInfo := session.GetAgent(sid)
+				So(agentInfo, ShouldNotBeNil)
+				agentInfo.Agent.busy = true
 
 				err = session.SendOp(sid, nil)
 				So(err, ShouldNotBeNil)

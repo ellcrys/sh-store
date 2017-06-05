@@ -34,18 +34,24 @@ func getNodeAddr() (string, int, error) {
 	return nodeAddr, port, err
 }
 
+// AgentInfo describes an agent and its owner
+type AgentInfo struct {
+	OwnerID string
+	Agent   *Agent
+}
+
 // Session defines a structure for a partition chain session manager
 type Session struct {
 	sync.Mutex
 	db         patchain.DB
-	agents     map[string]*Agent
+	agents     map[string]*AgentInfo
 	sessionReg SessionRegistry
 }
 
 // NewSession creates a new partition chain session
 func NewSession(sessionReg SessionRegistry) *Session {
 	return &Session{
-		agents:     make(map[string]*Agent),
+		agents:     make(map[string]*AgentInfo),
 		sessionReg: sessionReg,
 	}
 }
@@ -73,12 +79,14 @@ func (s *Session) HasSession(id string) bool {
 }
 
 // GetAgents returns all agents
-func (s *Session) GetAgents() map[string]*Agent {
+func (s *Session) GetAgents() map[string]*AgentInfo {
+	s.Lock()
+	defer s.Unlock()
 	return s.agents
 }
 
 // GetAgent gets a session agent. Returns nil if session does not exists
-func (s *Session) GetAgent(id string) *Agent {
+func (s *Session) GetAgent(id string) *AgentInfo {
 	if s.HasSession(id) {
 		s.Lock()
 		defer s.Unlock()
@@ -89,16 +97,16 @@ func (s *Session) GetAgent(id string) *Agent {
 
 // SendOp sends an operation to a session agent
 func (s *Session) SendOp(id string, op *Op) error {
-	agent := s.GetAgent(id)
+	agentInfo := s.GetAgent(id)
 
-	if agent == nil {
+	if agentInfo == nil {
 		return fmt.Errorf("session not found")
 	}
-	if agent.busy {
+	if agentInfo.Agent.busy {
 		return fmt.Errorf("session is busy")
 	}
 
-	agent.opChan <- op
+	agentInfo.Agent.opChan <- op
 	if op.Done != nil {
 		<-op.Done
 	}
@@ -107,7 +115,7 @@ func (s *Session) SendOp(id string, op *Op) error {
 		return op.Error
 	}
 
-	return agent.Error
+	return agentInfo.Agent.Error
 }
 
 // Stop all active sessions
@@ -118,8 +126,8 @@ func (s *Session) Stop() {
 
 	s.Lock()
 	defer s.Unlock()
-	for sid, agent := range s.agents {
-		agent.Stop()
+	for sid, agentInfo := range s.agents {
+		agentInfo.Agent.Stop()
 		s.End(sid)
 	}
 }
@@ -134,7 +142,7 @@ func (s *Session) removeAgent(id string) {
 // End stops and removes an agent from memory and registry
 func (s *Session) End(id string) {
 	if s.HasSession(id) {
-		s.GetAgent(id).Stop()
+		s.GetAgent(id).Agent.Stop()
 		s.removeAgent(id)
 		s.sessionReg.Del(id) // delete from session registry
 	}
@@ -144,7 +152,7 @@ func (s *Session) End(id string) {
 // removes the session/agent
 func (s *Session) CommitEnd(id string) {
 	if s.HasSession(id) {
-		s.GetAgent(id).commit()
+		s.GetAgent(id).Agent.commit()
 		s.End(id)
 	}
 }
@@ -153,7 +161,7 @@ func (s *Session) CommitEnd(id string) {
 // removes the session/agent
 func (s *Session) RollbackEnd(id string) {
 	if s.HasSession(id) {
-		s.GetAgent(id).rollback()
+		s.GetAgent(id).Agent.rollback()
 		s.End(id)
 	}
 }
@@ -161,14 +169,14 @@ func (s *Session) RollbackEnd(id string) {
 // Commit commits the current transaction of an agent
 func (s *Session) Commit(id string) {
 	if s.HasSession(id) {
-		s.GetAgent(id).commit()
+		s.GetAgent(id).Agent.commit()
 	}
 }
 
 // Rollback rollbacks the current transaction of an agent
 func (s *Session) Rollback(id string) {
 	if s.HasSession(id) {
-		s.GetAgent(id).rollback()
+		s.GetAgent(id).Agent.rollback()
 	}
 }
 
@@ -201,7 +209,10 @@ func (s *Session) createSession(id, identityID string, registered bool) (string,
 	})
 
 	s.Lock()
-	s.agents[id] = agent
+	s.agents[id] = &AgentInfo{
+		OwnerID: identityID,
+		Agent:   agent,
+	}
 	s.Unlock()
 
 	if registered {

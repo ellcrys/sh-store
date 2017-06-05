@@ -38,6 +38,7 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
 
+	// Handle session
 	if len(sessionID) > 0 {
 
 		if !s.dbSession.HasSession(sessionID) {
@@ -50,11 +51,15 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 			// find session in the registry
 			sessionItem, err := s.sessionReg.Get(sessionID)
 			if err != nil {
-				fmt.Println("Here")
 				if err == session.ErrNotFound {
 					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
 				}
 				return nil, common.ServerError
+			}
+
+			// check if session is owned by the developer, if not, return permission error
+			if sessionItem.Meta["identity"] != developerID {
+				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
 			}
 
 			sessionHostAddr := net.JoinHostPort(sessionItem.Address, strconv.Itoa(sessionItem.Port))
@@ -79,6 +84,14 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 			return resp, nil
 		}
+
+		// check if session is owned by the developer, if not, return permission error
+		if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
+			if sessionAgent.OwnerID != developerID {
+				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			}
+		}
+
 	} else { // session id not provided, create local, unregistered session
 		sessionID = util.UUID4()
 		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
@@ -206,6 +219,11 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 				return nil, common.ServerError
 			}
 
+			// check if session is owned by the developer, if not, return permission error
+			if sessionItem.Meta["identity"] != developerID {
+				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			}
+
 			sessionHostAddr := net.JoinHostPort(sessionItem.Address, strconv.Itoa(sessionItem.Port))
 			client, err := grpc.Dial(sessionHostAddr, grpc.WithInsecure())
 			if err != nil {
@@ -229,6 +247,13 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 			}
 
 			return resp, nil
+		}
+
+		// check if session is owned by the developer, if not, return permission error
+		if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
+			if sessionAgent.OwnerID != developerID {
+				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			}
 		}
 
 	} else { // session id not provided, create local, unregistered session
@@ -344,6 +369,11 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 				return nil, common.ServerError
 			}
 
+			// check if session is owned by the developer, if not, return permission error
+			if sessionItem.Meta["identity"] != developerID {
+				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			}
+
 			sessionHostAddr := net.JoinHostPort(sessionItem.Address, strconv.Itoa(sessionItem.Port))
 			client, err := grpc.Dial(sessionHostAddr, grpc.WithInsecure())
 			if err != nil {
@@ -368,6 +398,14 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 
 			return resp, nil
 		}
+
+		// check if session is owned by the developer, if not, return permission error
+		if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
+			if sessionAgent.OwnerID != developerID {
+				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			}
+		}
+
 	} else {
 		sessionID = util.UUID4()
 		s.dbSession.CreateUnregisteredSession(sessionID, developerID)

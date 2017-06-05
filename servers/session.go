@@ -35,7 +35,7 @@ func (s *RPC) CreateDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 
 // GetDBSession gets a database session.
 func (s *RPC) GetDBSession(ctx context.Context, req *proto_rpc.DBSession) (*proto_rpc.DBSession, error) {
-	// developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxIdentity).(string)
 
 	if req.ID == "" {
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
@@ -44,16 +44,27 @@ func (s *RPC) GetDBSession(ctx context.Context, req *proto_rpc.DBSession) (*prot
 	sessionID := req.ID
 
 	// check if session exists locally
-	if s.dbSession.HasSession(sessionID) {
+	if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
+
+		// check if session is owned by the developer, if not, return permission error
+		if sessionAgent.OwnerID != developerID {
+			return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+		}
+
 		return req, nil
 	}
 
 	// check session registry
-	_, err := s.sessionReg.Get(sessionID)
+	regItem, err := s.sessionReg.Get(sessionID)
 	if err != nil {
 		if err == session.ErrNotFound {
 			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
 		}
+	}
+
+	// check if session is owned by the developer, if not, return permission error
+	if regItem.Meta["identity"] != developerID {
+		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
 	}
 
 	return req, nil
@@ -62,7 +73,7 @@ func (s *RPC) GetDBSession(ctx context.Context, req *proto_rpc.DBSession) (*prot
 // DeleteDBSession deletes a existing database session
 func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*proto_rpc.DBSession, error) {
 
-	// developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
 
@@ -73,7 +84,13 @@ func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 	sessionID := req.ID
 
 	// check if session exists locally, if so, delete immediately
-	if s.dbSession.HasSession(sessionID) {
+	if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
+
+		// check if session is owned by the developer, if not, return permission error
+		if sessionAgent.OwnerID != developerID {
+			return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+		}
+
 		s.dbSession.End(sessionID)
 		return req, nil
 	}
@@ -92,6 +109,11 @@ func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
 		}
 		return nil, common.ServerError
+	}
+
+	// check if session is owned by the developer, if not, return permission error
+	if item.Meta["identity"] != developerID {
+		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
 	}
 
 	sessionHostAddr := net.JoinHostPort(item.Address, strconv.Itoa(item.Port))
@@ -123,7 +145,7 @@ func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 // committed, or has already been committed or does not exist.
 func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.DBSession) (*proto_rpc.DBSession, error) {
 
-	// developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
 
@@ -133,8 +155,14 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.DBSession) (*pro
 
 	sessionID := req.ID
 
-	// check if session exists locally, if so, commit immediately
-	if s.dbSession.HasSession(sessionID) {
+	// check if session exists locally, if so, authenticate developer and commit immediately
+	if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
+
+		// check if session is owned by the developer, if not, return permission error
+		if sessionAgent.OwnerID != developerID {
+			return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+		}
+
 		s.dbSession.Commit(sessionID)
 		return req, nil
 	}
@@ -153,6 +181,11 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.DBSession) (*pro
 			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
 		}
 		return nil, common.ServerError
+	}
+
+	// check if session is owned by the developer, if not, return permission error
+	if item.Meta["identity"] != developerID {
+		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
 	}
 
 	sessionHostAddr := net.JoinHostPort(item.Address, strconv.Itoa(item.Port))
@@ -184,7 +217,7 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.DBSession) (*pro
 // rolled back, or has already been rolled back or does not exist.
 func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.DBSession) (*proto_rpc.DBSession, error) {
 
-	// developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
 
@@ -194,8 +227,14 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 
 	sessionID := req.ID
 
-	// check if session exists locally, if so, rollback immediately
-	if s.dbSession.HasSession(sessionID) {
+	// check if session exists locally, if so, authenticate developer and rollback immediately
+	if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
+
+		// check if session is owned by the developer, if not, return permission error
+		if sessionAgent.OwnerID != developerID {
+			return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+		}
+
 		s.dbSession.Rollback(sessionID)
 		return req, nil
 	}
@@ -214,6 +253,11 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
 		}
 		return nil, common.ServerError
+	}
+
+	// check if session is owned by the developer, if not, return permission error
+	if item.Meta["identity"] != developerID {
+		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
 	}
 
 	sessionHostAddr := net.JoinHostPort(item.Address, strconv.Itoa(item.Port))

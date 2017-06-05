@@ -46,6 +46,8 @@ var (
 		"/proto_rpc.API/CreateMapping",
 		"/proto_rpc.API/GetMapping",
 		"/proto_rpc.API/GetAllMapping",
+		"/proto_rpc.API/CommitSession",
+		"/proto_rpc.API/RollbackSession",
 	}
 )
 
