@@ -754,6 +754,28 @@ func TestRPC(t *testing.T) {
 					So(objs[0]["owner_id"], ShouldEqual, owner.ID)
 				})
 
+				Convey("Should successfully create object belonging to the authenticated identity(developer) even when the owner_id of the object is not set", func() {
+					partitions, err := object.NewObject(cdb).CreatePartitions(1, owner.ID, owner.ID)
+					So(err, ShouldBeNil)
+					So(len(partitions), ShouldEqual, 1)
+
+					ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
+					req := &proto_rpc.CreateObjectsMsg{
+						Objects: util.MustStringify([]*proto_rpc.Object{
+							{ID: "some_id2", Key: "some_key"},
+						}),
+					}
+					resp, err := rpcServer.CreateObjects(ctx, req)
+					So(err, ShouldBeNil)
+
+					var objs []map[string]interface{}
+					err = util.FromJSON(resp.Objects, &objs)
+					So(err, ShouldBeNil)
+
+					So(len(objs), ShouldEqual, 1)
+					So(objs[0]["owner_id"], ShouldEqual, owner.ID)
+				})
+
 				Convey("With mapping", func() {
 					mapName := util.RandString(5)
 					mapObj := object.MakeMappingObject(owner.ID, mapName, `{ "my_key": "key", "my_val": "value" }`)

@@ -91,6 +91,14 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 		return nil, common.NewSingleAPIErr(400, "", "", "failed to parse objects", nil)
 	}
 
+	// add creator_id and include developer as the owner_id if any object is missing it
+	for _, obj := range objs {
+		obj["creator_id"] = developerID
+		if obj["owner_id"] == nil {
+			obj["owner_id"] = developerID
+		}
+	}
+
 	var mapping map[string]string
 
 	// if mapping name is provided, get the mapping and unmap the objects
@@ -128,9 +136,8 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 	var patchainObjs []*tables.Object
 
-	// set developer as the creator id, create final patchain objects
+	// create final patchain objects
 	for _, obj := range objs {
-		obj["creator_id"] = developerID
 		var o tables.Object
 		util.CopyToStruct(&o, obj)
 		patchainObjs = append(patchainObjs, &o)
