@@ -1,10 +1,15 @@
 package session
 
 import (
+	"fmt"
+
+	"github.com/asaskevich/govalidator"
 	"github.com/ellcrys/consul/api"
 	"github.com/ellcrys/util"
 	"github.com/pkg/errors"
 )
+
+var SessionTTL = "900s"
 
 // ConsulRegistry implements a session registry based on
 // consul. It satisfies SessionRegistry interface.
@@ -37,16 +42,40 @@ func makeKey(sid string) string {
 
 // Add registers a new session
 func (r *ConsulRegistry) Add(item RegItem) error {
-	kv := r.client.KV()
-	_, err := kv.Put(&api.KVPair{
-		Key:   makeKey(item.SID),
-		Value: item.ToJSON(),
+
+	if !govalidator.IsUUIDv4(item.SID) {
+		return fmt.Errorf("session id must be a UUID")
+	}
+
+	session := r.client.Session()
+	sessionID, _, err := session.Create(&api.SessionEntry{
+		ID:       item.SID,
+		TTL:      SessionTTL,
+		Behavior: api.SessionBehaviorDelete,
 	}, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to create consul session")
+	}
+
+	acquired, _, err := r.client.KV().Acquire(&api.KVPair{
+		Key:     makeKey(item.SID),
+		Value:   item.ToJSON(),
+		Session: sessionID,
+	}, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to create consul key for db session")
+	}
+
+	if !acquired {
+		return fmt.Errorf("failed to acquire lock on session")
+	}
+
 	return err
 }
 
 // Get gets a session. Returns ErrNotFound if not found
 func (r *ConsulRegistry) Get(sid string) (*RegItem, error) {
+
 	kv, _, err := r.client.KV().Get(makeKey(sid), nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get session")
@@ -64,9 +93,20 @@ func (r *ConsulRegistry) Get(sid string) (*RegItem, error) {
 // Del deletes a session. Returns nil if the session was
 // deleted successfully or it doesn't exists
 func (r *ConsulRegistry) Del(sid string) (err error) {
-	_, err = r.client.KV().Delete(makeKey(sid), nil)
+
+	if !govalidator.IsUUIDv4(sid) {
+		return fmt.Errorf("session id must be a UUID")
+	}
+
+	_, err = r.client.Session().Destroy(sid, nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to delete registry item")
 	}
+
+	_, err = r.client.KV().Delete(makeKey(sid), nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to delete session key")
+	}
+
 	return
 }
