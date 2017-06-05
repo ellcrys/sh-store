@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"sync"
+
 	"github.com/asaskevich/govalidator"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
@@ -50,6 +52,7 @@ type Op struct {
 // Agent defines a structure for an agent
 // that holds a database session
 type Agent struct {
+	sync.Mutex
 	opChan     chan *Op
 	curOp      *Op
 	db         patchain.DB
@@ -87,6 +90,8 @@ func (a *Agent) Stop() {
 
 // put an object
 func (a *Agent) put() error {
+	a.Lock()
+	defer a.Unlock()
 
 	if !a.began {
 		return fmt.Errorf("agent has not started. Did you call Start()?")
@@ -99,6 +104,8 @@ func (a *Agent) put() error {
 // get gets objects by query with JSQ or a putchain.Object.
 // If op.QueryWithJSQ is set, it is used, otherwise op.QueryWithObject is used.
 func (a *Agent) get() error {
+	a.Lock()
+	defer a.Unlock()
 
 	if !a.began {
 		return fmt.Errorf("agent has not started. Did you call Start()?")
@@ -157,6 +164,8 @@ func (a *Agent) get() error {
 
 // counts object that match a query
 func (a *Agent) count() error {
+	a.Lock()
+	defer a.Unlock()
 
 	if !a.began {
 		return fmt.Errorf("agent has not started. Did you call Start()?")
@@ -220,6 +229,9 @@ func (a *Agent) Debug() {
 
 // newTx creates a new transaction
 func (a *Agent) newTx() {
+	a.Lock()
+	defer a.Unlock()
+
 	if a.txFinished {
 		a.tx = a.db.Begin()
 		a.txFinished = false
@@ -229,8 +241,10 @@ func (a *Agent) newTx() {
 // commit commits the current transaction
 func (a *Agent) commit() {
 	if a.tx != nil && !a.txFinished {
+		a.Lock()
 		a.Error = a.tx.Commit()
 		a.txFinished = true
+		a.Unlock()
 		a.newTx()
 	}
 }
@@ -238,14 +252,18 @@ func (a *Agent) commit() {
 // rollback rolls back the current transaction
 func (a *Agent) rollback() {
 	if a.tx != nil && !a.txFinished {
+		a.Lock()
 		a.Error = a.tx.Rollback()
 		a.txFinished = true
+		a.Unlock()
 		a.newTx()
 	}
 }
 
 // closeDoneChan closes the Op done channel and sets it to nil
 func (a *Agent) closeDoneChan(op *Op) {
+	a.Lock()
+	defer a.Unlock()
 	if op == nil {
 		return
 	}
@@ -261,8 +279,10 @@ func (a *Agent) closeDoneChan(op *Op) {
 // and passes any error to the operation
 func (a *Agent) Start(endCb func()) {
 
+	a.Lock()
 	a.tx = a.db.Begin()
 	a.began = true
+	a.Unlock()
 
 	for !a.stop {
 		select {
