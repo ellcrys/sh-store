@@ -51,13 +51,13 @@ func validateMapping(mapping map[string]string) []common.Error {
 // string, otherwise it will find any mapping matching the mapping name.
 func (s *RPC) getMappingWithSession(sid, mappingName, ownerID string) (map[string]string, error) {
 
-	var mappingQuery = fmt.Sprintf(`{ "key":"%s", "owner_id":"%s" }`, object.MakeMappingKey(mappingName), ownerID)
+	var query = tables.Object{Key: object.MakeMappingKey(mappingName), OwnerID: ownerID}
 	if govalidator.IsUUIDv4(mappingName) {
-		mappingQuery = fmt.Sprintf(`{ "id": "` + mappingName + `" }`)
+		query = tables.Object{ID: mappingName}
 	}
 
 	var mappingObj tables.Object
-	if err := session.SendQueryOpWithSession(s.dbSession, sid, mappingQuery, 1, "", &mappingObj); err != nil {
+	if err := session.SendQueryOpWithSession(s.dbSession, sid, "", &query, 1, "", &mappingObj); err != nil {
 		if err == patchain.ErrNotFound {
 			return nil, common.NewSingleAPIErr(404, "", "", "mapping with name=`"+mappingName+"` does not exist", nil)
 		}
@@ -98,9 +98,9 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 
 	mappingObj := object.MakeMappingObject(developerID, req.Name, string(req.Mapping))
 	err := s.dbSession.SendOp(fullSessionID, &session.Op{
-		OpType: session.OpPutObjects,
-		Data:   mappingObj,
-		Done:   make(chan struct{}),
+		OpType:  session.OpPutObjects,
+		PutData: mappingObj,
+		Done:    make(chan struct{}),
 	})
 	if err != nil {
 		s.dbSession.RollbackEnd(fullSessionID)
@@ -129,10 +129,10 @@ func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*pr
 	var mapping tables.Object
 	err := s.dbSession.SendOp(fullSessionID, &session.Op{
 		OpType: session.OpGetObjects,
-		Data: `{ 
-			"key": "` + object.MakeMappingKey(req.Name) + `", 
-			"owner_id": "` + developerID + `" 
-		}`,
+		QueryWithObject: &tables.Object{
+			Key:     object.MakeMappingKey(req.Name),
+			OwnerID: developerID,
+		},
 		OrderBy: "timestamp desc",
 		Limit:   1,
 		Out:     &mapping,
@@ -163,22 +163,22 @@ func (s *RPC) GetAllMapping(ctx context.Context, req *proto_rpc.GetAllMappingMsg
 	s.dbSession.CreateUnregisteredSession(fullSessionID, developerID)
 	defer s.dbSession.CommitEnd(fullSessionID)
 
-	var expr = `{ "$sw": "` + object.MappingPrefix + `" }`
+	// create query. Find all mapping belonging to the developer. If mapping name is set, find
+	// mapping with the matching name that belongs to the developer.
+	var query = tables.Object{QueryParams: patchain.KeyStartsWith(object.MappingPrefix), OwnerID: developerID}
 	if len(req.Name) > 0 {
-		expr = `{ "$eq": "` + object.MakeMappingKey(req.Name) + `" }`
+		query.QueryParams = patchain.QueryParams{}
+		query.Key = object.MakeMappingKey(req.Name)
 	}
 
 	var mappings []tables.Object
 	err := s.dbSession.SendOp(fullSessionID, &session.Op{
-		OpType: session.OpGetObjects,
-		Data: `{ 
-			"key":` + expr + `, 
-			"owner_id": "` + developerID + `" 
-		}`,
-		OrderBy: "timestamp desc",
-		Limit:   int(req.Limit),
-		Out:     &mappings,
-		Done:    make(chan struct{}),
+		OpType:          session.OpGetObjects,
+		QueryWithObject: &query,
+		OrderBy:         "timestamp desc",
+		Limit:           int(req.Limit),
+		Out:             &mappings,
+		Done:            make(chan struct{}),
 	})
 	if err != nil {
 		if err == patchain.ErrNotFound {

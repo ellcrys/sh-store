@@ -623,6 +623,7 @@ func TestRPC(t *testing.T) {
 								Limit: 1,
 							})
 							So(err, ShouldBeNil)
+							// pretty.Println(resp.Mappings)
 							So(len(resp.Mappings), ShouldEqual, 1)
 							So(resp.Mappings[0].Name, ShouldEqual, object.MakeMappingKey("map2"))
 							So(resp.Mappings[0].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))

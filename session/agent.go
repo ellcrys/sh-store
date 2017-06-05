@@ -42,13 +42,15 @@ var (
 
 // Op represents an agent operation
 type Op struct {
-	OpType  OpType
-	Data    interface{}
-	Out     interface{}
-	Done    chan struct{}
-	Limit   int
-	OrderBy string
-	Error   error
+	OpType          OpType
+	PutData         interface{}
+	QueryWithJSQ    string
+	QueryWithObject *tables.Object
+	Out             interface{}
+	Done            chan struct{}
+	Limit           int
+	OrderBy         string
+	Error           error
 }
 
 // Agent defines a structure for an agent
@@ -97,10 +99,11 @@ func (a *Agent) put() error {
 	}
 
 	var dbOp = patchain.UseDBOption{DB: a.tx}
-	return a.o.Put(a.curOp.Data, &dbOp)
+	return a.o.Put(a.curOp.PutData, &dbOp)
 }
 
-// get gets objects
+// get gets objects by query with JSQ or a putchain.Object.
+// If op.QueryWithJSQ is set, it is used, otherwise op.QueryWithObject is used.
 func (a *Agent) get() error {
 
 	if !a.began {
@@ -111,36 +114,46 @@ func (a *Agent) get() error {
 		return fmt.Errorf("operation object is required")
 	}
 
-	queryJSON, ok := a.curOp.Data.(string)
-	if !ok || !govalidator.IsJSON(queryJSON) {
-		return fmt.Errorf("query must be a json string")
-	}
+	var finalQueryObj *tables.Object
 
-	jsq := a.tx.NewQuery()
-	if err := jsq.Parse(queryJSON); err != nil {
-		return err
-	}
+	// Use JSQ enabled query if op.QueryWithJSQ is set
+	if a.curOp.QueryWithJSQ != "" {
 
-	sql, args, err := jsq.ToSQL()
-	if err != nil {
-		return errors.Wrap(err, "failed to generate SQL")
-	}
+		if !govalidator.IsJSON(a.curOp.QueryWithJSQ) {
+			return fmt.Errorf("query must be a json string")
+		}
 
-	if a.debug {
-		logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, a.curOp.OrderBy, a.curOp.Limit)
-	}
+		jsq := a.tx.NewQuery()
+		if err := jsq.Parse(a.curOp.QueryWithJSQ); err != nil {
+			return err
+		}
 
-	err = a.tx.GetAll(&tables.Object{
-		QueryParams: patchain.QueryParams{
-			Limit:   a.curOp.Limit,
-			OrderBy: a.curOp.OrderBy,
-			Expr: patchain.Expr{
-				Expr: sql,
-				Args: args,
+		sql, args, err := jsq.ToSQL()
+		if err != nil {
+			return errors.Wrap(err, "failed to generate SQL")
+		}
+
+		if a.debug {
+			logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, a.curOp.OrderBy, a.curOp.Limit)
+		}
+
+		finalQueryObj = &tables.Object{
+			QueryParams: patchain.QueryParams{
+				Limit:   a.curOp.Limit,
+				OrderBy: a.curOp.OrderBy,
+				Expr: patchain.Expr{
+					Expr: sql,
+					Args: args,
+				},
 			},
-		},
-	}, a.curOp.Out)
+		}
+	} else {
+		finalQueryObj = a.curOp.QueryWithObject
+		finalQueryObj.QueryParams.Limit = a.curOp.Limit
+		finalQueryObj.QueryParams.OrderBy = a.curOp.OrderBy
+	}
 
+	err := a.tx.GetAll(finalQueryObj, a.curOp.Out)
 	if err != nil {
 		return err
 	}
@@ -159,36 +172,46 @@ func (a *Agent) count() error {
 		return fmt.Errorf("operation object is required")
 	}
 
-	queryJSON, ok := a.curOp.Data.(string)
-	if !ok || !govalidator.IsJSON(queryJSON) {
-		return fmt.Errorf("query must be a json string")
-	}
+	var finalQueryObj *tables.Object
 
-	jsq := a.tx.NewQuery()
-	if err := jsq.Parse(queryJSON); err != nil {
-		return errors.Wrap(err, "failed to parse query")
-	}
+	// Use JSQ enabled query if op.QueryWithJSQ is set
+	if a.curOp.QueryWithJSQ != "" {
 
-	sql, args, err := jsq.ToSQL()
-	if err != nil {
-		return errors.Wrap(err, "failed to generate SQL")
-	}
+		if !govalidator.IsJSON(a.curOp.QueryWithJSQ) {
+			return fmt.Errorf("query must be a json string")
+		}
 
-	if a.debug {
-		logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, a.curOp.OrderBy, a.curOp.Limit)
-	}
+		jsq := a.tx.NewQuery()
+		if err := jsq.Parse(a.curOp.QueryWithJSQ); err != nil {
+			return err
+		}
 
-	err = a.tx.Count(&tables.Object{
-		QueryParams: patchain.QueryParams{
-			Limit:   a.curOp.Limit,
-			OrderBy: a.curOp.OrderBy,
-			Expr: patchain.Expr{
-				Expr: sql,
-				Args: args,
+		sql, args, err := jsq.ToSQL()
+		if err != nil {
+			return errors.Wrap(err, "failed to generate SQL")
+		}
+
+		if a.debug {
+			logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, a.curOp.OrderBy, a.curOp.Limit)
+		}
+
+		finalQueryObj = &tables.Object{
+			QueryParams: patchain.QueryParams{
+				Limit:   a.curOp.Limit,
+				OrderBy: a.curOp.OrderBy,
+				Expr: patchain.Expr{
+					Expr: sql,
+					Args: args,
+				},
 			},
-		},
-	}, a.curOp.Out)
+		}
+	} else {
+		finalQueryObj = a.curOp.QueryWithObject
+		finalQueryObj.QueryParams.Limit = a.curOp.Limit
+		finalQueryObj.QueryParams.OrderBy = a.curOp.OrderBy
+	}
 
+	err := a.tx.Count(finalQueryObj, a.curOp.Out)
 	if err != nil {
 		return err
 	}

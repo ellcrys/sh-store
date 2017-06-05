@@ -10,12 +10,10 @@ import (
 
 	"strings"
 
-	"github.com/asaskevich/govalidator"
 	"github.com/ellcrys/util"
 	"github.com/fatih/structs"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
-	"github.com/ncodes/patchain/object"
 	"github.com/ncodes/safehold/servers/common"
 	"github.com/ncodes/safehold/servers/proto_rpc"
 	"github.com/ncodes/safehold/session"
@@ -235,7 +233,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 	// if owner is set and not the same as the developer id, check if it exists
 	if len(req.Owner) > 0 && req.Owner != developerID {
-		if err = session.SendQueryOpWithSession(s.dbSession, sid, `{ "id": "`+req.Owner+`" }`, 1, "", &tables.Object{}); err != nil {
+		if err = session.SendQueryOpWithSession(s.dbSession, sid, "", &tables.Object{ID: req.Owner}, 1, "", &tables.Object{}); err != nil {
 			if err == patchain.ErrNotFound {
 				return nil, common.NewSingleAPIErr(404, "", "", "owner not found", nil)
 			}
@@ -246,7 +244,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 	// if creator is set and not the same as the developer id, check if it exists
 	if len(req.Creator) > 0 && req.Creator != developerID {
-		if err = session.SendQueryOpWithSession(s.dbSession, sid, `{ "id": "`+req.Creator+`" }`, 1, "", &tables.Object{}); err != nil {
+		if err = session.SendQueryOpWithSession(s.dbSession, sid, "", &tables.Object{ID: req.Creator}, 1, "", &tables.Object{}); err != nil {
 			if err == patchain.ErrNotFound {
 				return nil, common.NewSingleAPIErr(404, "", "", "creator not found", nil)
 			}
@@ -292,7 +290,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	common.UnMapFields(mapping, query)
 
 	var fetchedObjs []*tables.Object
-	if err = session.SendQueryOpWithSession(s.dbSession, sid, string(util.MustStringify(query)), int(req.Limit), orderByToString(req.Order), &fetchedObjs); err != nil {
+	if err = session.SendQueryOpWithSession(s.dbSession, sid, string(util.MustStringify(query)), nil, int(req.Limit), orderByToString(req.Order), &fetchedObjs); err != nil {
 		if strings.Contains(err.Error(), "unknown query field") {
 			return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "query", err.Error(), nil)
 		}
@@ -373,7 +371,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 
 	// if owner is set and not the same as the developer id, check if it exists
 	if len(req.Owner) > 0 && req.Owner != developerID {
-		if err := session.SendQueryOpWithSession(s.dbSession, sid, `{ "id": "`+req.Owner+`" }`, 1, "", &tables.Object{}); err != nil {
+		if err := session.SendQueryOpWithSession(s.dbSession, sid, "", &tables.Object{ID: req.Owner}, 1, "", &tables.Object{}); err != nil {
 			if err == patchain.ErrNotFound {
 				return nil, common.NewSingleAPIErr(404, "", "", "owner not found", nil)
 			}
@@ -384,7 +382,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 
 	// if creator is set and not the same as the developer id, check if it exists
 	if len(req.Creator) > 0 && req.Creator != developerID {
-		if err := session.SendQueryOpWithSession(s.dbSession, sid, `{ "id": "`+req.Creator+`" }`, 1, "", &tables.Object{}); err != nil {
+		if err := session.SendQueryOpWithSession(s.dbSession, sid, "", &tables.Object{ID: req.Creator}, 1, "", &tables.Object{}); err != nil {
 			if err == patchain.ErrNotFound {
 				return nil, common.NewSingleAPIErr(404, "", "", "creator not found", nil)
 			}
@@ -415,7 +413,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	query["creator_id"] = req.Creator
 
 	var count int64
-	if err := session.SendCountOpWithSession(s.dbSession, sid, string(util.MustStringify(query)), &count); err != nil {
+	if err := session.SendCountOpWithSession(s.dbSession, sid, string(util.MustStringify(query)), nil, &count); err != nil {
 		logRPC.Errorf("%+v", err)
 		return nil, common.ServerError
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ellcrys/util"
 	"github.com/ncodes/patchain"
+	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/pkg/errors"
 )
 
@@ -218,15 +219,16 @@ func (s *Session) registerSession(sid string, identityID string) error {
 }
 
 // SendQueryOp sends a query operation
-func SendQueryOp(ses *Session, query string, limit int, order string, out interface{}) error {
+func SendQueryOp(ses *Session, queryWithJSQ string, queryWithObj *tables.Object, limit int, order string, out interface{}) error {
 	sid := ses.CreateUnregisteredSession(util.UUID4(), util.UUID4())
 	if err := ses.SendOp(sid, &Op{
-		OpType:  OpGetObjects,
-		Data:    query,
-		Done:    make(chan struct{}),
-		Out:     out,
-		Limit:   limit,
-		OrderBy: order,
+		OpType:          OpGetObjects,
+		QueryWithJSQ:    queryWithJSQ,
+		QueryWithObject: queryWithObj,
+		Done:            make(chan struct{}),
+		Out:             out,
+		Limit:           limit,
+		OrderBy:         order,
 	}); err != nil {
 		return err
 	}
@@ -234,18 +236,19 @@ func SendQueryOp(ses *Session, query string, limit int, order string, out interf
 }
 
 // SendQueryOpWithSession sends a query operation using an existing session id
-func SendQueryOpWithSession(ses *Session, sid, query string, limit int, order string, out interface{}) error {
+func SendQueryOpWithSession(ses *Session, sid, queryWithJSQ string, queryWithObj *tables.Object, limit int, order string, out interface{}) error {
 	agent := ses.GetAgent(sid)
 	if agent == nil {
 		return fmt.Errorf("session not found")
 	}
 	if err := ses.SendOp(sid, &Op{
-		OpType:  OpGetObjects,
-		Data:    query,
-		Done:    make(chan struct{}),
-		Out:     out,
-		Limit:   limit,
-		OrderBy: order,
+		OpType:          OpGetObjects,
+		QueryWithJSQ:    queryWithJSQ,
+		QueryWithObject: queryWithObj,
+		Done:            make(chan struct{}),
+		Out:             out,
+		Limit:           limit,
+		OrderBy:         order,
 	}); err != nil {
 		return err
 	}
@@ -253,16 +256,17 @@ func SendQueryOpWithSession(ses *Session, sid, query string, limit int, order st
 }
 
 // SendCountOpWithSession sends a query operation using an existing session id
-func SendCountOpWithSession(ses *Session, sid, query string, out interface{}) error {
+func SendCountOpWithSession(ses *Session, sid, queryWithJSQ string, queryWithObj *tables.Object, out interface{}) error {
 	agent := ses.GetAgent(sid)
 	if agent == nil {
 		return fmt.Errorf("session not found")
 	}
 	if err := ses.SendOp(sid, &Op{
-		OpType: OpCountObjects,
-		Data:   query,
-		Done:   make(chan struct{}),
-		Out:    out,
+		OpType:          OpCountObjects,
+		QueryWithJSQ:    queryWithJSQ,
+		QueryWithObject: queryWithObj,
+		Done:            make(chan struct{}),
+		Out:             out,
 	}); err != nil {
 		return err
 	}
@@ -276,9 +280,9 @@ func SendPutOpWithSession(ses *Session, sid string, data interface{}) error {
 		return fmt.Errorf("session not found")
 	}
 	if err := ses.SendOp(sid, &Op{
-		OpType: OpPutObjects,
-		Data:   data,
-		Done:   make(chan struct{}),
+		OpType:  OpPutObjects,
+		PutData: data,
+		Done:    make(chan struct{}),
 	}); err != nil {
 		return err
 	}

@@ -58,7 +58,7 @@ func TestAgent(t *testing.T) {
 	cdb := cockroach.NewDB()
 	cdb.ConnectionString = conStrWithDB
 	cdb.NoLogging()
-	if err := cdb.Connect(10, 5); err != nil {
+	if err := cdb.Connect(0, 5); err != nil {
 		t.Fatalf("failed to connect to database. %s", err)
 	}
 
@@ -75,7 +75,7 @@ func TestAgent(t *testing.T) {
 		Convey(".put", func() {
 			Convey("Should return error if Begin() has not been called", func() {
 				a := NewAgent(cdb, make(chan *Op))
-				a.curOp = &Op{Data: tables.Object{}}
+				a.curOp = &Op{PutData: tables.Object{}}
 				err := a.put()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "agent has not started. Did you call Begin()?")
@@ -103,7 +103,7 @@ func TestAgent(t *testing.T) {
 				a := NewAgent(cdb, make(chan *Op))
 				go a.Begin(nil)
 				time.Sleep(10 * time.Millisecond)
-				a.curOp = &Op{Data: "{"}
+				a.curOp = &Op{QueryWithJSQ: "{"}
 				err := a.get()
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "query must be a json string")
@@ -113,10 +113,10 @@ func TestAgent(t *testing.T) {
 				a := NewAgent(cdb, make(chan *Op))
 				go a.Begin(nil)
 				time.Sleep(10 * time.Millisecond)
-				a.curOp = &Op{Data: `{ "$not": [] }`}
+				a.curOp = &Op{QueryWithJSQ: `{ "$not": [] }`}
 				err := a.get()
 				So(err, ShouldNotBeNil)
-				So(err.Error(), ShouldEqual, "failed to parse query: unknown top level operator: $not")
+				So(err.Error(), ShouldEqual, "unknown top level operator: $not")
 			})
 		})
 
@@ -139,7 +139,7 @@ func TestAgent(t *testing.T) {
 
 			Convey("Should return error if query is not valid json", func() {
 				a := NewAgent(cdb, make(chan *Op))
-				a.curOp = &Op{Data: "{"}
+				a.curOp = &Op{QueryWithJSQ: "{"}
 				go a.Begin(nil)
 				time.Sleep(10 * time.Millisecond)
 				err := a.count()
@@ -149,12 +149,12 @@ func TestAgent(t *testing.T) {
 
 			Convey("Should return error if json query was not parsed", func() {
 				a := NewAgent(cdb, make(chan *Op))
-				a.curOp = &Op{Data: `{ "$not": [] }`}
+				a.curOp = &Op{QueryWithJSQ: `{ "$not": [] }`}
 				go a.Begin(nil)
 				time.Sleep(10 * time.Millisecond)
 				err := a.count()
 				So(err, ShouldNotBeNil)
-				So(err.Error(), ShouldEqual, "failed to parse query: unknown top level operator: $not")
+				So(err.Error(), ShouldEqual, "unknown top level operator: $not")
 			})
 		})
 	})
@@ -307,7 +307,7 @@ func TestAgent(t *testing.T) {
 						err = session.SendOp(sid, &Op{
 							OpType: OpPutObjects,
 							Done:   make(chan struct{}),
-							Data: &tables.Object{
+							PutData: &tables.Object{
 								ID:        "my_obj_1",
 								OwnerID:   owner.ID,
 								CreatorID: owner.ID,
@@ -317,7 +317,23 @@ func TestAgent(t *testing.T) {
 						session.CommitEnd(sid)
 
 						Convey("OpGetObjects", func() {
-							Convey("Should successfully get an object", func() {
+							Convey("Should successfully get an object using JSQ", func() {
+								sid := "abc"
+								sid, err := session.CreateSession(sid, "")
+								So(err, ShouldBeNil)
+								var out []tables.Object
+								err = session.SendOp(sid, &Op{
+									OpType:       OpGetObjects,
+									Done:         make(chan struct{}),
+									QueryWithJSQ: `{ "id": "my_obj_1" }`,
+									Out:          &out,
+								})
+								So(err, ShouldBeNil)
+								So(len(out), ShouldEqual, 1)
+								session.CommitEnd(sid)
+							})
+
+							Convey("Should successfully get an object using tables.Object", func() {
 								sid := "abc"
 								sid, err := session.CreateSession(sid, "")
 								So(err, ShouldBeNil)
@@ -325,8 +341,10 @@ func TestAgent(t *testing.T) {
 								err = session.SendOp(sid, &Op{
 									OpType: OpGetObjects,
 									Done:   make(chan struct{}),
-									Data:   `{ "id": "my_obj_1" }`,
-									Out:    &out,
+									QueryWithObject: &tables.Object{
+										ID: "my_obj_1",
+									},
+									Out: &out,
 								})
 								So(err, ShouldBeNil)
 								So(len(out), ShouldEqual, 1)
@@ -335,7 +353,23 @@ func TestAgent(t *testing.T) {
 						})
 
 						Convey("OpCountObjects", func() {
-							Convey("Should successfully get an object", func() {
+							Convey("Should successfully count an object by querying with JSQ", func() {
+								sid := "abc"
+								sid, err := session.CreateSession(sid, "")
+								So(err, ShouldBeNil)
+								var count int64
+								err = session.SendOp(sid, &Op{
+									OpType:       OpCountObjects,
+									Done:         make(chan struct{}),
+									QueryWithJSQ: `{ "id": "my_obj_1" }`,
+									Out:          &count,
+								})
+								So(err, ShouldBeNil)
+								So(count, ShouldEqual, 1)
+								session.CommitEnd(sid)
+							})
+
+							Convey("Should successfully count an object by querying with tables.Object", func() {
 								sid := "abc"
 								sid, err := session.CreateSession(sid, "")
 								So(err, ShouldBeNil)
@@ -343,8 +377,10 @@ func TestAgent(t *testing.T) {
 								err = session.SendOp(sid, &Op{
 									OpType: OpCountObjects,
 									Done:   make(chan struct{}),
-									Data:   `{ "id": "my_obj_1" }`,
-									Out:    &count,
+									QueryWithObject: &tables.Object{
+										ID: "my_obj_1",
+									},
+									Out: &count,
 								})
 								So(err, ShouldBeNil)
 								So(count, ShouldEqual, 1)
