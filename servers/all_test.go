@@ -114,17 +114,21 @@ func TestRPC(t *testing.T) {
 					Email:    fmt.Sprintf("%s@email.com", util.RandString(5)),
 					Password: "some_password",
 				}
-				o, err := rpcServer.CreateIdentity(context.Background(), newIdentity)
+				resp, err := rpcServer.CreateIdentity(context.Background(), newIdentity)
 				So(err, ShouldBeNil)
-				So(o.Data.Attributes.Key, ShouldEqual, object.MakeIdentityKey(newIdentity.Email))
-				So(o.Data.ID, ShouldNotBeEmpty)
-				So(o.Data.Type, ShouldNotBeEmpty)
-				So(o.Data.Attributes.CreatorID, ShouldNotBeEmpty)
-				So(o.Data.Attributes.OwnerID, ShouldNotBeEmpty)
-				So(o.Data.Attributes.Hash, ShouldNotBeEmpty)
-				So(o.Data.Attributes.PrevHash, ShouldNotBeEmpty)
-				So(o.Data.Attributes.PartitionID, ShouldNotBeEmpty)
-				So(o.Data.Attributes.Protected, ShouldEqual, true)
+
+				var o map[string]interface{}
+				err = util.FromJSON(resp.Object, &o)
+				So(err, ShouldBeNil)
+
+				So(o["id"], ShouldNotBeEmpty)
+				So(o["key"], ShouldEqual, object.MakeIdentityKey(newIdentity.Email))
+				So(o["creator_id"], ShouldNotBeEmpty)
+				So(o["owner_id"], ShouldNotBeEmpty)
+				So(o["hash"], ShouldNotBeEmpty)
+				So(o["prev_hash"], ShouldNotBeEmpty)
+				So(o["partition_id"], ShouldNotBeEmpty)
+				So(o["protected"], ShouldEqual, true)
 
 				Convey("Should not error if existing identity is not confirmed", func() {
 					_, err := rpcServer.CreateIdentity(context.Background(), newIdentity)
@@ -164,14 +168,22 @@ func TestRPC(t *testing.T) {
 				So(err, ShouldBeNil)
 
 				email := util.RandString(5) + "@e.com"
-				identity := object.MakeIdentityObject(systemIdentity.ID, systemIdentity.ID, email, "some_pass", false)
-				identity.Ref3 = "confirmed"
+				identity := object.MakeIdentityObject(systemIdentity.ID, systemIdentity.ID, email, "some_pass", false).Init()
 				err = cdb.Create(identity)
 				So(err, ShouldBeNil)
 
 				resp, err := rpcServer.GetIdentity(context.Background(), &proto_rpc.GetIdentityMsg{ID: identity.ID})
 				So(err, ShouldBeNil)
-				So(resp.Data.Attributes.ID, ShouldEqual, identity.ID)
+
+				var o map[string]interface{}
+				util.FromJSON(resp.Object, &o)
+
+				So(o["id"], ShouldEqual, identity.ID)
+				So(o["key"], ShouldEqual, object.MakeIdentityKey(email))
+				So(o["creator_id"], ShouldNotBeEmpty)
+				So(o["owner_id"], ShouldNotBeEmpty)
+				So(o["prev_hash"], ShouldNotBeEmpty)
+				So(o["protected"], ShouldEqual, false)
 			})
 		})
 
@@ -373,18 +385,53 @@ func TestRPC(t *testing.T) {
 					err := cdb.Create(owner)
 					So(err, ShouldBeNil)
 
-					obj := &tables.Object{OwnerID: owner.ID, CreatorID: owner.ID, Key: "a_key"}
+					obj := &tables.Object{
+						OwnerID:   owner.ID,
+						CreatorID: owner.ID,
+						Key:       "key_abc",
+						Value:     "abcdef",
+						Ref1:      "something_abc",
+					}
 					obj.Init().ComputeHash()
 					err = cdb.Create(obj)
 					So(err, ShouldBeNil)
+
 					ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
 					resp, err := rpcServer.GetObjects(ctx, &proto_rpc.GetObjectMsg{
-						Query: util.MustStringify(map[string]interface{}{"key": "a_key"}),
+						Query: util.MustStringify(map[string]interface{}{"key": obj.Key}),
 						Owner: owner.ID,
 					})
 					So(err, ShouldBeNil)
-					So(len(resp.Data), ShouldEqual, 1)
-					So(resp.Data[0].ID, ShouldEqual, obj.ID)
+
+					var objs []map[string]interface{}
+					err = util.FromJSON(resp.Objects, &objs)
+					So(err, ShouldBeNil)
+
+					So(len(objs), ShouldEqual, 1)
+					So(objs[0]["id"], ShouldEqual, obj.ID)
+
+					Convey("With mapping", func() {
+						mapName := util.RandString(5)
+						mapObj := object.MakeMappingObject(owner.ID, mapName, `{ "my_key": "key", "my_val": "value", "auth_id": "ref1" }`)
+						err = cdb.Create(mapObj)
+						So(err, ShouldBeNil)
+
+						ctx := context.WithValue(context.Background(), CtxIdentity, owner.ID)
+						resp, err := rpcServer.GetObjects(ctx, &proto_rpc.GetObjectMsg{
+							Query:   util.MustStringify(map[string]interface{}{"key": obj.Key}),
+							Owner:   owner.ID,
+							Mapping: mapName,
+						})
+						So(err, ShouldBeNil)
+
+						var objs []map[string]interface{}
+						err = util.FromJSON(resp.Objects, &objs)
+						So(err, ShouldBeNil)
+						So(len(objs), ShouldEqual, 1)
+						So(objs[0]["my_key"], ShouldEqual, obj.Key)
+						So(objs[0]["my_val"], ShouldEqual, obj.Value)
+						So(objs[0]["auth_id"], ShouldEqual, obj.Ref1)
+					})
 				})
 			})
 		})
@@ -678,7 +725,13 @@ func TestRPC(t *testing.T) {
 					}
 					resp, err := rpcServer.CreateObjects(ctx, req)
 					So(err, ShouldBeNil)
-					So(len(resp.Data), ShouldEqual, 1)
+
+					var objs []map[string]interface{}
+					err = util.FromJSON(resp.Objects, &objs)
+					So(err, ShouldBeNil)
+
+					So(len(objs), ShouldEqual, 1)
+					So(objs[0]["owner_id"], ShouldEqual, owner.ID)
 				})
 
 				Convey("With mapping", func() {
@@ -687,7 +740,7 @@ func TestRPC(t *testing.T) {
 					err = cdb.Create(mapObj)
 					So(err, ShouldBeNil)
 
-					Convey("Should successfully unmap and create the object with valid fields", func() {
+					Convey("Should successfully unmap object, create the object and reapply mapping to the returned object", func() {
 						partitions, err := object.NewObject(cdb).CreatePartitions(1, owner.ID, owner.ID)
 						So(err, ShouldBeNil)
 						So(len(partitions), ShouldEqual, 1)
@@ -698,16 +751,22 @@ func TestRPC(t *testing.T) {
 							Objects: util.MustStringify([]map[string]interface{}{{
 								"owner_id": owner.ID,
 								"id":       "some_id_abc",
-								"my_key":   "my_key",
-								"my_val":   "my_val",
+								"my_key":   "abcdef",
+								"my_val":   "xyz",
 							}}),
 						}
 						resp, err := rpcServer.CreateObjects(ctx, req)
 						So(err, ShouldBeNil)
-						So(len(resp.Data), ShouldEqual, 1)
-						So(resp.Data[0].ID, ShouldEqual, "some_id_abc")
-						So(resp.Data[0].Attributes.Key, ShouldEqual, "my_key")
-						So(resp.Data[0].Attributes.Value, ShouldEqual, "my_val")
+
+						var objs []map[string]interface{}
+						err = util.FromJSON(resp.Objects, &objs)
+						So(err, ShouldBeNil)
+
+						So(len(objs), ShouldEqual, 1)
+						So(objs[0]["owner_id"], ShouldEqual, owner.ID)
+						So(objs[0]["id"], ShouldEqual, "some_id_abc")
+						So(objs[0]["my_key"], ShouldEqual, "abcdef")
+						So(objs[0]["my_val"], ShouldEqual, "xyz")
 					})
 				})
 

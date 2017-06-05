@@ -118,7 +118,7 @@ func (a *Agent) get() error {
 
 	jsq := a.tx.NewQuery()
 	if err := jsq.Parse(queryJSON); err != nil {
-		return errors.Wrap(err, "failed to parse query")
+		return err
 	}
 
 	sql, args, err := jsq.ToSQL()

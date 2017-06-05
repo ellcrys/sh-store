@@ -3,6 +3,7 @@ package servers
 import (
 	"github.com/asaskevich/govalidator"
 	val "github.com/asaskevich/govalidator"
+	"github.com/ellcrys/util"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/patchain/object"
@@ -43,7 +44,7 @@ func (s *RPC) getSystemIdentity() (*tables.Object, error) {
 }
 
 // CreateIdentity creates a new identity for object
-func (s *RPC) CreateIdentity(ctx context.Context, req *proto_rpc.CreateIdentityMsg) (*proto_rpc.ObjectResponse, error) {
+func (s *RPC) CreateIdentity(ctx context.Context, req *proto_rpc.CreateIdentityMsg) (*proto_rpc.GetObjectResponse, error) {
 
 	// validate request
 	if errs := validateIdentity(req); len(errs) > 0 {
@@ -112,12 +113,13 @@ func (s *RPC) CreateIdentity(ctx context.Context, req *proto_rpc.CreateIdentityM
 
 	// TODO: send confirmation notification to email
 
-	resp, _ := NewObjectResponse("identity", newIdentity, nil)
-	return resp, nil
+	return &proto_rpc.GetObjectResponse{
+		Object: util.MustStringify(newIdentity),
+	}, nil
 }
 
 // GetIdentity fetches an identity object
-func (s *RPC) GetIdentity(ctx context.Context, req *proto_rpc.GetIdentityMsg) (*proto_rpc.ObjectResponse, error) {
+func (s *RPC) GetIdentity(ctx context.Context, req *proto_rpc.GetIdentityMsg) (*proto_rpc.GetObjectResponse, error) {
 
 	var err error
 	var identity *tables.Object
@@ -135,6 +137,7 @@ func (s *RPC) GetIdentity(ctx context.Context, req *proto_rpc.GetIdentityMsg) (*
 		}
 	}
 
-	resp, _ := NewObjectResponse("identity", identity, nil)
-	return resp, nil
+	return &proto_rpc.GetObjectResponse{
+		Object: util.MustStringify(identity),
+	}, nil
 }

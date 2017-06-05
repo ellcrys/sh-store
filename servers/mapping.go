@@ -3,6 +3,7 @@ package servers
 import (
 	"fmt"
 
+	"github.com/asaskevich/govalidator"
 	"github.com/ellcrys/util"
 	"github.com/labstack/gommon/log"
 	"github.com/ncodes/patchain"
@@ -43,6 +44,32 @@ func validateMapping(mapping map[string]string) []common.Error {
 		}
 	}
 	return errs
+}
+
+// getMappingWithSession gets a mapping using an active session. It will
+// find mapping belonging to the ownerID if the mapping name is not a UUIDv4
+// string, otherwise it will find any mapping matching the mapping name.
+func (s *RPC) getMappingWithSession(sid, mappingName, ownerID string) (map[string]string, error) {
+
+	var mappingQuery = fmt.Sprintf(`{ "key":"%s", "owner_id":"%s" }`, object.MakeMappingKey(mappingName), ownerID)
+	if govalidator.IsUUIDv4(mappingName) {
+		mappingQuery = fmt.Sprintf(`{ "id": "` + mappingName + `" }`)
+	}
+
+	var mappingObj tables.Object
+	if err := session.SendQueryOpWithSession(s.dbSession, sid, mappingQuery, 1, "", &mappingObj); err != nil {
+		if err == patchain.ErrNotFound {
+			return nil, common.NewSingleAPIErr(404, "", "", "mapping with name=`"+mappingName+"` does not exist", nil)
+		}
+		return nil, common.ServerError
+	}
+
+	var mapping map[string]string
+	if err := util.FromJSON([]byte(mappingObj.Value), &mapping); err != nil {
+		return nil, common.NewSingleAPIErr(500, "", "", "failed to parse mapping value", nil)
+	}
+
+	return mapping, nil
 }
 
 // CreateMapping creates a mapping for an identity

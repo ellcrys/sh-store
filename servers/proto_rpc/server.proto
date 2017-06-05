@@ -3,14 +3,14 @@ package proto_rpc;
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
 service API {
-    rpc CreateIdentity(CreateIdentityMsg) returns (ObjectResponse);
-    rpc CreateObjects(CreateObjectsMsg) returns (MultiObjectResponse);
+    rpc CreateIdentity(CreateIdentityMsg) returns (GetObjectResponse);
+    rpc CreateObjects(CreateObjectsMsg) returns (GetObjectsResponse);
     rpc CreateDBSession(DBSession) returns (DBSession);
     rpc GetDBSession(DBSession) returns (DBSession);
     rpc DeleteDBSession(DBSession) returns (DBSession);
-    rpc GetObjects(GetObjectMsg) returns (MultiObjectResponse);
+    rpc GetObjects(GetObjectMsg) returns (GetObjectsResponse);
     rpc CountObjects(GetObjectMsg) returns (ObjectCountResponse);
-    rpc GetIdentity(GetIdentityMsg) returns (ObjectResponse);
+    rpc GetIdentity(GetIdentityMsg) returns (GetObjectResponse);
     rpc CreateMapping(CreateMappingMsg) returns (CreateMappingResponse);
     rpc GetMapping(GetMappingMsg) returns (GetMappingResponse);
     rpc GetAllMapping(GetAllMappingMsg) returns (GetAllMappingResponse);
@@ -73,6 +73,9 @@ message GetObjectMsg {
     string creator = 3               [(gogoproto.jsontag) = "creator,omitempty", (gogoproto.moretags) = 'structs:"creator,omitempty" mapstructure:"creator,omitempty"'];
     repeated OrderBy order = 4       [(gogoproto.jsontag) = "order,omitempty", (gogoproto.moretags) = 'structs:"order,omitempty" mapstructure:"order,omitempty"'];
     int32 limit = 5                  [(gogoproto.jsontag) = "limit,omitempty", (gogoproto.moretags) = 'structs:"limit,omitempty" mapstructure:"limit,omitempty"']; 
+    
+    // Optional mapping to use during object decoding
+    string mapping = 6               [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
 }
 
 // OrderBy represents how a field is ordered in a query
@@ -104,23 +107,15 @@ message CreateIdentityMsg {
     bool developer = 3          [(gogoproto.jsontag) = "developer,omitempty", (gogoproto.moretags) = 'structs:"developer,omitempty" mapstructure:"developer,omitempty"'];
 }
 
-// ObjectResponse defines a response about a single object
-message ObjectResponse {
-    ObjectResponseData data  = 1                      [(gogoproto.jsontag) = "data,omitempty", (gogoproto.moretags) = 'structs:"data,omitempty" mapstructure:"data,omitempty"'];
-    map<string,string> links = 2                      [(gogoproto.jsontag) = "links,omitempty", (gogoproto.moretags) = 'structs:"links,omitempty" mapstructure:"links,omitempty"'];
+// GetObjectResponse describes a response of multiple objects
+message GetObjectResponse {
+    bytes object  = 1             [(gogoproto.jsontag) = "data,omitempty", (gogoproto.moretags) = 'structs:"data,omitempty" mapstructure:"data,omitempty"'];
 }
 
-// MultiObjectResponse describes a response of multiple objects
-message MultiObjectResponse {
-    repeated ObjectResponseData data = 1             [(gogoproto.jsontag) = "data,omitempty", (gogoproto.moretags) = 'structs:"data,omitempty" mapstructure:"data,omitempty"'];
-    map<string,string> links = 2                     [(gogoproto.jsontag) = "links,omitempty", (gogoproto.moretags) = 'structs:"links,omitempty" mapstructure:"links,omitempty"'];
-}
-
-// ObjectResponse describes an object and related information
-message ObjectResponseData {
-    string type = 1                            [(gogoproto.jsontag) = "type,omitempty", (gogoproto.moretags) = 'structs:"type,omitempty" mapstructure:"type,omitempty"'];
-    string ID = 2                              [(gogoproto.jsontag) = "id,omitempty", (gogoproto.moretags) = 'structs:"id,omitempty" mapstructure:"id,omitempty"'];
-    Object attributes = 3                      [(gogoproto.jsontag) = "attributes,omitempty", (gogoproto.moretags) = 'structs:"attributes,omitempty" mapstructure:"attributes,omitempty"'];
+// GetObjectsResponse describes a response of multiple objects
+message GetObjectsResponse {
+    // Must contain list of maps [{...},{...}]
+    bytes objects  = 1             [(gogoproto.jsontag) = "data,omitempty", (gogoproto.moretags) = 'structs:"data,omitempty" mapstructure:"data,omitempty"'];
 }
 
 // Object describes an object
