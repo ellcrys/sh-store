@@ -18,20 +18,14 @@ type OpType int
 var (
 	logAgent = config.MakeLogger("session.agent")
 
-	// OpCommit represents a commit operation
-	OpCommit OpType = 1
-
-	// OpRollback represents a rollback operation
-	OpRollback OpType = 2
-
 	// OpPutObjects represents an object creation operation.
-	OpPutObjects OpType = 3
+	OpPutObjects OpType = 1
 
 	// OpGetObjects represents a get object operation
-	OpGetObjects OpType = 4
+	OpGetObjects OpType = 2
 
 	// OpCountObjects represents a count operation
-	OpCountObjects OpType = 5
+	OpCountObjects OpType = 3
 
 	// MaxSessionIdleTime is the maximum duration a session can be idle before stopping
 	MaxSessionIdleTime = 10 * time.Minute
@@ -95,7 +89,7 @@ func (a *Agent) Stop() {
 func (a *Agent) put() error {
 
 	if !a.began {
-		return fmt.Errorf("agent has not started. Did you call Begin()?")
+		return fmt.Errorf("agent has not started. Did you call Start()?")
 	}
 
 	var dbOp = patchain.UseDBOption{DB: a.tx}
@@ -107,7 +101,7 @@ func (a *Agent) put() error {
 func (a *Agent) get() error {
 
 	if !a.began {
-		return fmt.Errorf("agent has not started. Did you call Begin()?")
+		return fmt.Errorf("agent has not started. Did you call Start()?")
 	}
 
 	if a.curOp == nil {
@@ -165,7 +159,7 @@ func (a *Agent) get() error {
 func (a *Agent) count() error {
 
 	if !a.began {
-		return fmt.Errorf("agent has not started. Did you call Begin()?")
+		return fmt.Errorf("agent has not started. Did you call Start()?")
 	}
 
 	if a.curOp == nil {
@@ -226,8 +220,10 @@ func (a *Agent) Debug() {
 
 // newTx creates a new transaction
 func (a *Agent) newTx() {
-	a.tx = a.db.Begin()
-	a.txFinished = false
+	if a.txFinished {
+		a.tx = a.db.Begin()
+		a.txFinished = false
+	}
 }
 
 // commit commits the current transaction
@@ -235,6 +231,7 @@ func (a *Agent) commit() {
 	if a.tx != nil && !a.txFinished {
 		a.Error = a.tx.Commit()
 		a.txFinished = true
+		a.newTx()
 	}
 }
 
@@ -243,6 +240,7 @@ func (a *Agent) rollback() {
 	if a.tx != nil && !a.txFinished {
 		a.Error = a.tx.Rollback()
 		a.txFinished = true
+		a.newTx()
 	}
 }
 
@@ -257,11 +255,11 @@ func (a *Agent) closeDoneChan(op *Op) {
 	}
 }
 
-// Begin starts a database transaction session.
+// Start starts a database transaction session.
 // Only a single operation is allowed to run at any point in time.
 // It closes the operations done/wait channel when it completes
 // and passes any error to the operation
-func (a *Agent) Begin(endCb func()) {
+func (a *Agent) Start(endCb func()) {
 
 	a.tx = a.db.Begin()
 	a.began = true
@@ -270,7 +268,7 @@ func (a *Agent) Begin(endCb func()) {
 		select {
 		case op := <-a.opChan:
 
-			// if agent is busy, do not accept new operation
+			// if agent is busy, do not accept new operations
 			if a.busy {
 				op.Error = ErrAgentBusy
 				a.closeDoneChan(op)
@@ -282,12 +280,6 @@ func (a *Agent) Begin(endCb func()) {
 
 			// process operations
 			switch op.OpType {
-			case OpCommit:
-				a.commit()
-				a.newTx()
-			case OpRollback:
-				a.rollback()
-				a.newTx()
 			case OpPutObjects:
 				op.Error = a.put()
 				if op.Error != nil {
