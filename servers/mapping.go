@@ -126,17 +126,24 @@ func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*pr
 	s.dbSession.CreateUnregisteredSession(fullSessionID, developerID)
 	defer s.dbSession.CommitEnd(fullSessionID)
 
+	// construct query. Find mapping with matching name/key that belongs to the current developer
+	// if the request name is not a UUID. Otherwise find any mapping with the matching UUID owned by any developer.
+	query := tables.Object{Key: object.MakeMappingKey(req.Name), OwnerID: developerID}
+	if govalidator.IsUUIDv4(req.Name) {
+		query.Key = ""
+		query.ID = req.Name
+		query.OwnerID = ""
+		query.QueryParams = patchain.KeyStartsWith(object.MappingPrefix)
+	}
+
 	var mapping tables.Object
 	err := s.dbSession.SendOp(fullSessionID, &session.Op{
-		OpType: session.OpGetObjects,
-		QueryWithObject: &tables.Object{
-			Key:     object.MakeMappingKey(req.Name),
-			OwnerID: developerID,
-		},
-		OrderBy: "timestamp desc",
-		Limit:   1,
-		Out:     &mapping,
-		Done:    make(chan struct{}),
+		OpType:          session.OpGetObjects,
+		QueryWithObject: &query,
+		OrderBy:         "timestamp desc",
+		Limit:           1,
+		Out:             &mapping,
+		Done:            make(chan struct{}),
 	})
 	if err != nil {
 		if err == patchain.ErrNotFound {
