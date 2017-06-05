@@ -252,6 +252,16 @@ func TestRPC(t *testing.T) {
 				So(errs[0].Message, ShouldEqual, `object 1: all objects must share the same owner_id`)
 			})
 
+			Convey("Should return error if object key starts with '$' character", func() {
+				t := []map[string]interface{}{
+					{"owner_id": owner.ID, "key": "$some_key"},
+				}
+				errs, err := rpcServer.validateObjects(t, nil)
+				So(err, ShouldBeNil)
+				So(len(errs), ShouldEqual, 1)
+				So(errs[0].Message, ShouldEqual, `object 0: key cannot start with a '$' character`)
+			})
+
 			Convey("Should successfully validate objects", func() {
 				t := []map[string]interface{}{
 					{"owner_id": owner.ID, "key": "some_key"},
