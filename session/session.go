@@ -158,6 +158,20 @@ func (s *Session) RollbackEnd(id string) {
 	}
 }
 
+// Commit commits the current transaction of an agent
+func (s *Session) Commit(id string) {
+	if s.HasSession(id) {
+		s.GetAgent(id).commit()
+	}
+}
+
+// Rollback rollbacks the current transaction of an agent
+func (s *Session) Rollback(id string) {
+	if s.HasSession(id) {
+		s.GetAgent(id).rollback()
+	}
+}
+
 // CreateSession creates a new session agent
 func (s *Session) CreateSession(id, identityID string) (string, error) {
 	return s.createSession(id, identityID, true)
@@ -182,7 +196,7 @@ func (s *Session) createSession(id, identityID string, registered bool) (string,
 	// and save a reference to it.
 	msgChan := make(chan *Op)
 	agent := NewAgent(s.db.NewDB(), msgChan)
-	go agent.Begin(func() { // on stop
+	go agent.Start(func() { // on stop
 		s.End(id) // remove agent
 	})
 

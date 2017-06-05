@@ -8,6 +8,8 @@ service API {
     rpc CreateDBSession(DBSession) returns (DBSession);
     rpc GetDBSession(DBSession) returns (DBSession);
     rpc DeleteDBSession(DBSession) returns (DBSession);
+    rpc CommitSession(DBSession) returns (DBSession);
+    rpc RollbackSession(DBSession) returns (DBSession);
     rpc GetObjects(GetObjectMsg) returns (GetObjectsResponse);
     rpc CountObjects(GetObjectMsg) returns (ObjectCountResponse);
     rpc GetIdentity(GetIdentityMsg) returns (GetObjectResponse);

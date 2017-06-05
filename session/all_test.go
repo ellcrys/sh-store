@@ -73,26 +73,26 @@ func TestAgent(t *testing.T) {
 
 	Convey("TestAgent", t, func() {
 		Convey(".put", func() {
-			Convey("Should return error if Begin() has not been called", func() {
+			Convey("Should return error if Start() has not been called", func() {
 				a := NewAgent(cdb, make(chan *Op))
 				a.curOp = &Op{PutData: tables.Object{}}
 				err := a.put()
 				So(err, ShouldNotBeNil)
-				So(err.Error(), ShouldEqual, "agent has not started. Did you call Begin()?")
+				So(err.Error(), ShouldEqual, "agent has not started. Did you call Start()?")
 			})
 		})
 
 		Convey(".get", func() {
-			Convey("Should return error if Begin() has not been called", func() {
+			Convey("Should return error if Start() has not been called", func() {
 				a := NewAgent(cdb, make(chan *Op))
 				err := a.get()
 				So(err, ShouldNotBeNil)
-				So(err.Error(), ShouldEqual, "agent has not started. Did you call Begin()?")
+				So(err.Error(), ShouldEqual, "agent has not started. Did you call Start()?")
 			})
 
 			Convey("Should return error if `curOp` of agent is nil", func() {
 				a := NewAgent(cdb, make(chan *Op))
-				go a.Begin(nil)
+				go a.Start(nil)
 				time.Sleep(10 * time.Millisecond)
 				err := a.get()
 				So(err, ShouldNotBeNil)
@@ -101,7 +101,7 @@ func TestAgent(t *testing.T) {
 
 			Convey("Should return error if query is not valid json", func() {
 				a := NewAgent(cdb, make(chan *Op))
-				go a.Begin(nil)
+				go a.Start(nil)
 				time.Sleep(10 * time.Millisecond)
 				a.curOp = &Op{QueryWithJSQ: "{"}
 				err := a.get()
@@ -111,7 +111,7 @@ func TestAgent(t *testing.T) {
 
 			Convey("Should return error if json query was not parsed", func() {
 				a := NewAgent(cdb, make(chan *Op))
-				go a.Begin(nil)
+				go a.Start(nil)
 				time.Sleep(10 * time.Millisecond)
 				a.curOp = &Op{QueryWithJSQ: `{ "$not": [] }`}
 				err := a.get()
@@ -121,16 +121,16 @@ func TestAgent(t *testing.T) {
 		})
 
 		Convey(".count", func() {
-			Convey("Should return error if Begin() has not been called", func() {
+			Convey("Should return error if Start() has not been called", func() {
 				a := NewAgent(cdb, make(chan *Op))
 				err := a.count()
 				So(err, ShouldNotBeNil)
-				So(err.Error(), ShouldEqual, "agent has not started. Did you call Begin()?")
+				So(err.Error(), ShouldEqual, "agent has not started. Did you call Start()?")
 			})
 
 			Convey("Should return error if `curOp` of agent is nil", func() {
 				a := NewAgent(cdb, make(chan *Op))
-				go a.Begin(nil)
+				go a.Start(nil)
 				time.Sleep(10 * time.Millisecond)
 				err := a.count()
 				So(err, ShouldNotBeNil)
@@ -140,7 +140,7 @@ func TestAgent(t *testing.T) {
 			Convey("Should return error if query is not valid json", func() {
 				a := NewAgent(cdb, make(chan *Op))
 				a.curOp = &Op{QueryWithJSQ: "{"}
-				go a.Begin(nil)
+				go a.Start(nil)
 				time.Sleep(10 * time.Millisecond)
 				err := a.count()
 				So(err, ShouldNotBeNil)
@@ -150,7 +150,7 @@ func TestAgent(t *testing.T) {
 			Convey("Should return error if json query was not parsed", func() {
 				a := NewAgent(cdb, make(chan *Op))
 				a.curOp = &Op{QueryWithJSQ: `{ "$not": [] }`}
-				go a.Begin(nil)
+				go a.Start(nil)
 				time.Sleep(10 * time.Millisecond)
 				err := a.count()
 				So(err, ShouldNotBeNil)

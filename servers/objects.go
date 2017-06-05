@@ -35,13 +35,12 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	var err error
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	developerID := ctx.Value(CtxIdentity).(string)
-	sid := makeDBSessionID(developerID, sessionID)
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
 
 	if len(sessionID) > 0 {
 
-		if !s.dbSession.HasSession(sid) {
+		if !s.dbSession.HasSession(sessionID) {
 
 			// abort further operations
 			if localOnly {
@@ -49,8 +48,9 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 			}
 
 			// find session in the registry
-			sessionItem, err := s.sessionReg.Get(sid)
+			sessionItem, err := s.sessionReg.Get(sessionID)
 			if err != nil {
+				fmt.Println("Here")
 				if err == session.ErrNotFound {
 					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
 				}
@@ -80,14 +80,14 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 			return resp, nil
 		}
 	} else { // session id not provided, create local, unregistered session
-		sid = makeDBSessionID(developerID, util.UUID4())
-		s.dbSession.CreateUnregisteredSession(sid, developerID)
-		defer s.dbSession.CommitEnd(sid)
+		sessionID = util.UUID4()
+		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		defer s.dbSession.CommitEnd(sessionID)
 	}
 
 	var objs []map[string]interface{}
 	if err := util.FromJSON(req.Objects, &objs); err != nil {
-		s.dbSession.RollbackEnd(sid)
+		s.dbSession.RollbackEnd(sessionID)
 		return nil, common.NewSingleAPIErr(400, "", "", "failed to parse objects", nil)
 	}
 
@@ -103,14 +103,14 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 	// if mapping name is provided, get the mapping and unmap the objects
 	if len(req.Mapping) > 0 {
-		mapping, err = s.getMappingWithSession(sid, req.Mapping, developerID)
+		mapping, err = s.getMappingWithSession(sessionID, req.Mapping, developerID)
 		if err != nil {
-			s.dbSession.RollbackEnd(sid)
+			s.dbSession.RollbackEnd(sessionID)
 			return nil, err
 		}
 
 		if err := common.UnMapFields(mapping, objs); err != nil {
-			s.dbSession.RollbackEnd(sid)
+			s.dbSession.RollbackEnd(sessionID)
 			logRPC.Errorf("%+v", errors.Wrap(err, "failed to unmap object"))
 			return nil, common.ServerError
 		}
@@ -118,19 +118,19 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 	vErrs, err := s.validateObjects(objs, mapping)
 	if err != nil {
-		s.dbSession.RollbackEnd(sid)
+		s.dbSession.RollbackEnd(sessionID)
 		logRPC.Errorf("%+v", errors.Wrap(err, "failed to validate objects"))
 		return nil, common.ServerError
 	}
 
 	if len(vErrs) > 0 {
-		s.dbSession.RollbackEnd(sid)
+		s.dbSession.RollbackEnd(sessionID)
 		return nil, common.NewMultiAPIErr(400, "validation errors", vErrs)
 	}
 
 	// ensure caller has permission to PUT objects on behalf of the object owner
 	if developerID != objs[0]["owner_id"].(string) {
-		s.dbSession.RollbackEnd(sid)
+		s.dbSession.RollbackEnd(sessionID)
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to create objects for the owner", nil)
 	}
 
@@ -143,9 +143,9 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 		patchainObjs = append(patchainObjs, &o)
 	}
 
-	if err := session.SendPutOpWithSession(s.dbSession, sid, patchainObjs); err != nil {
+	if err := session.SendPutOpWithSession(s.dbSession, sessionID, patchainObjs); err != nil {
 		logRPC.Errorf("%+v", err)
-		s.dbSession.RollbackEnd(sid)
+		s.dbSession.RollbackEnd(sessionID)
 		return nil, common.NewSingleAPIErr(500, common.CodePutError, "objects", err.Error(), nil)
 	}
 
@@ -183,7 +183,6 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	developerID := ctx.Value(CtxIdentity).(string)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
-	sid := makeDBSessionID(developerID, sessionID)
 	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
 
 	// Handle session if provided
@@ -191,7 +190,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 		// if session id does not exist locally, find it in the session registry and forward
 		// request to the session host
-		if !s.dbSession.HasSession(sid) {
+		if !s.dbSession.HasSession(sessionID) {
 
 			// abort further operations
 			if localOnly {
@@ -199,7 +198,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 			}
 
 			// find session in the registry
-			sessionItem, err := s.sessionReg.Get(sid)
+			sessionItem, err := s.sessionReg.Get(sessionID)
 			if err != nil {
 				if err == session.ErrNotFound {
 					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
@@ -233,14 +232,14 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 		}
 
 	} else { // session id not provided, create local, unregistered session
-		sid = makeDBSessionID(developerID, util.UUID4())
-		s.dbSession.CreateUnregisteredSession(sid, developerID)
-		defer s.dbSession.CommitEnd(sid)
+		sessionID = util.UUID4()
+		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		defer s.dbSession.CommitEnd(sessionID)
 	}
 
 	// if owner is set and not the same as the developer id, check if it exists
 	if len(req.Owner) > 0 && req.Owner != developerID {
-		if err = session.SendQueryOpWithSession(s.dbSession, sid, "", &tables.Object{ID: req.Owner}, 1, "", &tables.Object{}); err != nil {
+		if err = session.SendQueryOpWithSession(s.dbSession, sessionID, "", &tables.Object{ID: req.Owner}, 1, "", &tables.Object{}); err != nil {
 			if err == patchain.ErrNotFound {
 				return nil, common.NewSingleAPIErr(404, "", "", "owner not found", nil)
 			}
@@ -251,7 +250,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 	// if creator is set and not the same as the developer id, check if it exists
 	if len(req.Creator) > 0 && req.Creator != developerID {
-		if err = session.SendQueryOpWithSession(s.dbSession, sid, "", &tables.Object{ID: req.Creator}, 1, "", &tables.Object{}); err != nil {
+		if err = session.SendQueryOpWithSession(s.dbSession, sessionID, "", &tables.Object{ID: req.Creator}, 1, "", &tables.Object{}); err != nil {
 			if err == patchain.ErrNotFound {
 				return nil, common.NewSingleAPIErr(404, "", "", "creator not found", nil)
 			}
@@ -287,7 +286,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 	// if mapping is provided in request, fetch it
 	if len(req.Mapping) > 0 {
-		mapping, err = s.getMappingWithSession(sid, req.Mapping, developerID)
+		mapping, err = s.getMappingWithSession(sessionID, req.Mapping, developerID)
 		if err != nil {
 			return nil, err
 		}
@@ -297,7 +296,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	common.UnMapFields(mapping, query)
 
 	var fetchedObjs []*tables.Object
-	if err = session.SendQueryOpWithSession(s.dbSession, sid, string(util.MustStringify(query)), nil, int(req.Limit), orderByToString(req.Order), &fetchedObjs); err != nil {
+	if err = session.SendQueryOpWithSession(s.dbSession, sessionID, string(util.MustStringify(query)), nil, int(req.Limit), orderByToString(req.Order), &fetchedObjs); err != nil {
 		if strings.Contains(err.Error(), "unknown query field") {
 			return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "query", err.Error(), nil)
 		}
@@ -324,21 +323,20 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	developerID := ctx.Value(CtxIdentity).(string)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
-	sid := makeDBSessionID(developerID, sessionID)
 	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
 
 	// check if session exist in the in-memory session cache,
 	// use it else check if it exist on the session registry. If it does,
 	// forward the request to the associated host
 	if sessionID != "" {
-		if !s.dbSession.HasSession(sid) {
+		if !s.dbSession.HasSession(sessionID) {
 
 			if localOnly {
 				return nil, fmt.Errorf("session not found")
 			}
 
 			// find session in the registry
-			sessionItem, err := s.sessionReg.Get(sid)
+			sessionItem, err := s.sessionReg.Get(sessionID)
 			if err != nil {
 				if err == session.ErrNotFound {
 					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
@@ -371,14 +369,14 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 			return resp, nil
 		}
 	} else {
-		sid = makeDBSessionID(developerID, util.UUID4())
-		s.dbSession.CreateUnregisteredSession(sid, developerID)
-		defer s.dbSession.CommitEnd(sid)
+		sessionID = util.UUID4()
+		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		defer s.dbSession.CommitEnd(sessionID)
 	}
 
 	// if owner is set and not the same as the developer id, check if it exists
 	if len(req.Owner) > 0 && req.Owner != developerID {
-		if err := session.SendQueryOpWithSession(s.dbSession, sid, "", &tables.Object{ID: req.Owner}, 1, "", &tables.Object{}); err != nil {
+		if err := session.SendQueryOpWithSession(s.dbSession, sessionID, "", &tables.Object{ID: req.Owner}, 1, "", &tables.Object{}); err != nil {
 			if err == patchain.ErrNotFound {
 				return nil, common.NewSingleAPIErr(404, "", "", "owner not found", nil)
 			}
@@ -389,7 +387,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 
 	// if creator is set and not the same as the developer id, check if it exists
 	if len(req.Creator) > 0 && req.Creator != developerID {
-		if err := session.SendQueryOpWithSession(s.dbSession, sid, "", &tables.Object{ID: req.Creator}, 1, "", &tables.Object{}); err != nil {
+		if err := session.SendQueryOpWithSession(s.dbSession, sessionID, "", &tables.Object{ID: req.Creator}, 1, "", &tables.Object{}); err != nil {
 			if err == patchain.ErrNotFound {
 				return nil, common.NewSingleAPIErr(404, "", "", "creator not found", nil)
 			}
@@ -420,7 +418,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	query["creator_id"] = req.Creator
 
 	var count int64
-	if err := session.SendCountOpWithSession(s.dbSession, sid, string(util.MustStringify(query)), nil, &count); err != nil {
+	if err := session.SendCountOpWithSession(s.dbSession, sessionID, string(util.MustStringify(query)), nil, &count); err != nil {
 		logRPC.Errorf("%+v", err)
 		return nil, common.ServerError
 	}

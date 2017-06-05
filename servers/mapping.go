@@ -92,18 +92,18 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 		return nil, common.NewMultiAPIErr(400, "mapping error", errs)
 	}
 
-	fullSessionID := makeDBSessionID(developerID, util.UUID4())
-	s.dbSession.CreateUnregisteredSession(fullSessionID, developerID)
-	defer s.dbSession.CommitEnd(fullSessionID)
+	sessionID := util.UUID4()
+	s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+	defer s.dbSession.CommitEnd(sessionID)
 
 	mappingObj := object.MakeMappingObject(developerID, req.Name, string(req.Mapping))
-	err := s.dbSession.SendOp(fullSessionID, &session.Op{
+	err := s.dbSession.SendOp(sessionID, &session.Op{
 		OpType:  session.OpPutObjects,
 		PutData: mappingObj,
 		Done:    make(chan struct{}),
 	})
 	if err != nil {
-		s.dbSession.RollbackEnd(fullSessionID)
+		s.dbSession.RollbackEnd(sessionID)
 		return nil, common.ServerError
 	}
 
@@ -122,9 +122,9 @@ func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*pr
 		return nil, common.NewSingleAPIErr(400, "", "id", "name is required", nil)
 	}
 
-	fullSessionID := makeDBSessionID(developerID, util.UUID4())
-	s.dbSession.CreateUnregisteredSession(fullSessionID, developerID)
-	defer s.dbSession.CommitEnd(fullSessionID)
+	sessionID := util.UUID4()
+	s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+	defer s.dbSession.CommitEnd(sessionID)
 
 	// construct query. Find mapping with matching name/key that belongs to the current developer
 	// if the request name is not a UUID. Otherwise find any mapping with the matching UUID owned by any developer.
@@ -137,7 +137,7 @@ func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*pr
 	}
 
 	var mapping tables.Object
-	err := s.dbSession.SendOp(fullSessionID, &session.Op{
+	err := s.dbSession.SendOp(sessionID, &session.Op{
 		OpType:          session.OpGetObjects,
 		QueryWithObject: &query,
 		OrderBy:         "timestamp desc",
@@ -166,9 +166,9 @@ func (s *RPC) GetAllMapping(ctx context.Context, req *proto_rpc.GetAllMappingMsg
 		req.Limit = 50
 	}
 
-	fullSessionID := makeDBSessionID(developerID, util.UUID4())
-	s.dbSession.CreateUnregisteredSession(fullSessionID, developerID)
-	defer s.dbSession.CommitEnd(fullSessionID)
+	sessionID := util.UUID4()
+	s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+	defer s.dbSession.CommitEnd(sessionID)
 
 	// create query. Find all mapping belonging to the developer. If mapping name is set, find
 	// mapping with the matching name that belongs to the developer.
@@ -179,7 +179,7 @@ func (s *RPC) GetAllMapping(ctx context.Context, req *proto_rpc.GetAllMappingMsg
 	}
 
 	var mappings []tables.Object
-	err := s.dbSession.SendOp(fullSessionID, &session.Op{
+	err := s.dbSession.SendOp(sessionID, &session.Op{
 		OpType:          session.OpGetObjects,
 		QueryWithObject: &query,
 		OrderBy:         "timestamp desc",

@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/grpc/metadata"
 
+	"github.com/asaskevich/govalidator"
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/gorm"
 	"github.com/ncodes/patchain/cockroach"
@@ -261,30 +262,22 @@ func TestRPC(t *testing.T) {
 			})
 		})
 
-		Convey(".makeDBSessionID", func() {
-			Convey("Should return session id in the format: [identityID].[sessionID]", func() {
-				So(makeDBSessionID("some_id", "some_id"), ShouldEqual, "some_id.some_id")
-			})
-		})
-
 		Convey(".CreateDBSession", func() {
 			Convey("Should successfully create a session", func() {
 				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
-				session := &proto_rpc.DBSession{
-					ID: util.RandString(5),
-				}
+				session := &proto_rpc.DBSession{}
 
 				req, err := rpcServer.CreateDBSession(ctx, session)
 				So(err, ShouldBeNil)
-				So(req.ID, ShouldEqual, session.ID)
-				fullSid := makeDBSessionID("some_id", session.ID)
-				So(rpcServer.dbSession.HasSession(fullSid), ShouldEqual, true)
+				So(req.ID, ShouldNotBeEmpty)
+				So(govalidator.IsUUIDv4(req.ID), ShouldBeTrue)
+				So(rpcServer.dbSession.HasSession(req.ID), ShouldBeTrue)
 
-				item, err := consulReg.Get(fullSid)
+				item, err := consulReg.Get(req.ID)
 				So(err, ShouldBeNil)
 				So(item, ShouldNotBeNil)
-				So(item.SID, ShouldEqual, fullSid)
-				rpcServer.dbSession.End(fullSid)
+				So(item.SID, ShouldEqual, req.ID)
+				rpcServer.dbSession.End(req.ID)
 			})
 		})
 
@@ -302,18 +295,15 @@ func TestRPC(t *testing.T) {
 
 			Convey("Should successfully get a session", func() {
 				ctx := context.WithValue(context.Background(), CtxIdentity, "some_id")
-				session := &proto_rpc.DBSession{
-					ID: "some_id",
-				}
-				res, err := rpcServer.CreateDBSession(ctx, session)
+				created, err := rpcServer.CreateDBSession(ctx, &proto_rpc.DBSession{})
 				So(err, ShouldBeNil)
-				So(res.ID, ShouldEqual, "some_id")
+				So(created.ID, ShouldNotBeEmpty)
 
-				res, err = rpcServer.GetDBSession(ctx, session)
+				existingSession, err := rpcServer.GetDBSession(ctx, &proto_rpc.DBSession{ID: created.ID})
 				So(err, ShouldBeNil)
-				So(res.ID, ShouldEqual, session.ID)
+				So(existingSession.ID, ShouldEqual, created.ID)
 
-				rpcServer.dbSession.End(makeDBSessionID("some_id", "some_id"))
+				rpcServer.dbSession.End(existingSession.ID)
 			})
 		})
 

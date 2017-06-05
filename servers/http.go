@@ -59,6 +59,8 @@ func (s *HTTP) getRouter() *mux.Router {
 	g.HandleFunc("/sessions", common.EasyHandle(http.MethodPost, s.createSession))
 	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodGet, s.getSession)).Methods(http.MethodGet)
 	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodDelete, s.deleteSession)).Methods(http.MethodDelete)
+	g.HandleFunc("/sessions/{id}/commit", common.EasyHandle(http.MethodGet, s.commitSession)).Methods(http.MethodGet)
+	g.HandleFunc("/sessions/{id}/rollback", common.EasyHandle(http.MethodGet, s.rollbackSession)).Methods(http.MethodGet)
 	g.HandleFunc("/objects", common.EasyHandle(http.MethodPost, s.createObjects)).Methods(http.MethodPost)
 	g.HandleFunc("/objects/query", common.EasyHandle(http.MethodPost, s.getObjects)).Methods(http.MethodPost)
 	g.HandleFunc("/objects/count", common.EasyHandle(http.MethodPost, s.countObjects)).Methods(http.MethodPost)
@@ -170,6 +172,54 @@ func (s *HTTP) deleteSession(w http.ResponseWriter, r *http.Request) (interface{
 		}
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.DeleteDBSession(ctx, &proto_rpc.DBSession{
+			ID: mux.Vars(r)["id"],
+		})
+		return err
+	}); err != nil {
+		logHTTP.Errorf("%+v", err)
+		return err, 0
+	}
+
+	return resp, 200
+}
+
+// commitSession commits a session
+func (s *HTTP) commitSession(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+	var err error
+	var resp *proto_rpc.DBSession
+
+	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
+		var md metadata.MD
+		authorization := r.Header.Get("Authorization")
+		if len(authorization) > 0 {
+			md = metadata.Pairs("authorization", authorization)
+		}
+		ctx := metadata.NewContext(context.Background(), md)
+		resp, err = client.CommitSession(ctx, &proto_rpc.DBSession{
+			ID: mux.Vars(r)["id"],
+		})
+		return err
+	}); err != nil {
+		logHTTP.Errorf("%+v", err)
+		return err, 0
+	}
+
+	return resp, 200
+}
+
+// rollbackSession rolls back a session
+func (s *HTTP) rollbackSession(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+	var err error
+	var resp *proto_rpc.DBSession
+
+	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
+		var md metadata.MD
+		authorization := r.Header.Get("Authorization")
+		if len(authorization) > 0 {
+			md = metadata.Pairs("authorization", authorization)
+		}
+		ctx := metadata.NewContext(context.Background(), md)
+		resp, err = client.RollbackSession(ctx, &proto_rpc.DBSession{
 			ID: mux.Vars(r)["id"],
 		})
 		return err
