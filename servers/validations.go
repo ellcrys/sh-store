@@ -3,10 +3,12 @@ package servers
 import (
 	"fmt"
 
+	"github.com/asaskevich/govalidator"
 	"github.com/ncodes/mapvalidator"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
 	"github.com/ncodes/safehold/servers/common"
+	"github.com/ncodes/safehold/servers/proto_rpc"
 )
 
 // validateObjects validates a slice of objects returning all errors found.
@@ -59,12 +61,20 @@ func (s *RPC) validateObjects(objs []map[string]interface{}, mapping map[string]
 			mapvalidator.TypeWithMsg("ref8", mapvalidator.TypeString, fmt.Sprintf("object %d: %s must be a string", i, getMappedField("ref8"))),
 			mapvalidator.TypeWithMsg("ref9", mapvalidator.TypeString, fmt.Sprintf("object %d: %s must be a string", i, getMappedField("ref9"))),
 			mapvalidator.TypeWithMsg("ref10", mapvalidator.TypeString, fmt.Sprintf("object %d: %s must be a string", i, getMappedField("ref10"))),
+
 			mapvalidator.Custom("owner_id", fmt.Sprintf("object %d: all objects must share the same %s", i, getMappedField("owner_id")), func(fieldValue interface{}, fullMap map[string]interface{}) bool {
 				if fv, ok := fieldValue.(string); ok {
 					if prevOwnerID == "" {
 						prevOwnerID = fv
 					}
 					return prevOwnerID == fv
+				}
+				return true
+			}),
+
+			mapvalidator.Custom("key", fmt.Sprintf("object %d: %s cannot start with a '$' character", i, getMappedField("key")), func(fieldValue interface{}, fullMap map[string]interface{}) bool {
+				if fv, ok := fieldValue.(string); ok {
+					return fv[0] != '$'
 				}
 				return true
 			}),
@@ -90,4 +100,22 @@ func (s *RPC) validateObjects(objs []map[string]interface{}, mapping map[string]
 	}
 
 	return errs, nil
+}
+
+// validateIdentity validates a requested identity
+func validateIdentity(req *proto_rpc.CreateIdentityMsg) []common.Error {
+	var errs []common.Error
+	if govalidator.IsNull(req.Email) {
+		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Email is required", Field: "email"})
+	}
+	if !govalidator.IsEmail(req.Email) {
+		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Email is not valid", Field: "email"})
+	}
+	if govalidator.IsNull(req.Password) {
+		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Password is required", Field: "password"})
+	}
+	if len(req.Password) < 6 {
+		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Password is too short. Must be at least 6 characters long", Field: "password"})
+	}
+	return errs
 }

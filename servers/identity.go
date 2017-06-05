@@ -2,7 +2,6 @@ package servers
 
 import (
 	"github.com/asaskevich/govalidator"
-	val "github.com/asaskevich/govalidator"
 	"github.com/ellcrys/util"
 	"github.com/ncodes/patchain"
 	"github.com/ncodes/patchain/cockroach/tables"
@@ -12,24 +11,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/net/context"
 )
-
-// validateIdentity validates a requested identity
-func validateIdentity(req *proto_rpc.CreateIdentityMsg) []common.Error {
-	var errs []common.Error
-	if val.IsNull(req.Email) {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Email is required", Field: "email"})
-	}
-	if !val.IsEmail(req.Email) {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Email is not valid", Field: "email"})
-	}
-	if val.IsNull(req.Password) {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Password is required", Field: "password"})
-	}
-	if len(req.Password) < 6 {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Password is too short. Must be at least 6 characters long", Field: "password"})
-	}
-	return errs
-}
 
 // getSystemIdentity returns system identity or a response error
 func (s *RPC) getSystemIdentity() (*tables.Object, error) {
