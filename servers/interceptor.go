@@ -83,7 +83,7 @@ func (s *RPC) authInterceptor(ctx context.Context, req interface{}, info *grpc.U
 		return nil, fmt.Errorf("unknown token type")
 	})
 	if err != nil {
-		logRPC.Errorf("%+v", err)
+		logRPC.Debugf("%+v", err)
 		return nil, common.NewSingleAPIErr(400, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
 	}
 
@@ -107,8 +107,11 @@ func (s *RPC) processAppTokenClaims(ctx context.Context, claims jwt.MapClaims) (
 		Ref1:        claims["id"].(string),
 	})
 	if err != nil {
+		if err == patchain.ErrNotFound {
+			return ctx, common.NewSingleAPIErr(400, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
+		}
 		logRPC.Errorf("%+v", err)
-		return ctx, common.NewSingleAPIErr(400, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
+		return nil, common.ServerError
 	}
 
 	return context.WithValue(ctx, CtxIdentity, identity.ID), nil
