@@ -569,7 +569,12 @@ func TestRPC(t *testing.T) {
 							ctx := context.WithValue(context.Background(), CtxIdentity, identity.ID)
 							resp, err := rpcServer.GetMapping(ctx, &proto_rpc.GetMappingMsg{Name: "map1"})
 							So(err, ShouldBeNil)
-							So(resp.Mapping, ShouldResemble, []byte(`{ "custom_name": "ref1" }`))
+
+							var mapping map[string]interface{}
+							err = util.FromJSON(resp.Mapping, &mapping)
+							So(err, ShouldBeNil)
+
+							So(mapping["value"], ShouldResemble, `{ "custom_name": "ref1" }`)
 						})
 					})
 
@@ -594,13 +599,18 @@ func TestRPC(t *testing.T) {
 							ctx := context.WithValue(context.Background(), CtxIdentity, identity.ID)
 							resp, err := rpcServer.GetAllMapping(ctx, &proto_rpc.GetAllMappingMsg{})
 							So(err, ShouldBeNil)
-							So(len(resp.Mappings), ShouldEqual, 3)
-							So(resp.Mappings[0].Name, ShouldEqual, object.MakeMappingKey("map2"))
-							So(resp.Mappings[0].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))
-							So(resp.Mappings[1].Name, ShouldEqual, object.MakeMappingKey("map2"))
-							So(resp.Mappings[1].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))
-							So(resp.Mappings[2].Name, ShouldEqual, object.MakeMappingKey("map1"))
-							So(resp.Mappings[2].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref1" }`))
+
+							var mappings []map[string]interface{}
+							err = util.FromJSON(resp.Mappings, &mappings)
+							So(err, ShouldBeNil)
+
+							So(len(mappings), ShouldEqual, 3)
+							So(mappings[0]["key"], ShouldEqual, object.MakeMappingKey("map2"))
+							So(mappings[0]["value"], ShouldResemble, `{ "custom_name": "ref2" }`)
+							So(mappings[1]["key"], ShouldEqual, object.MakeMappingKey("map2"))
+							So(mappings[1]["value"], ShouldResemble, `{ "custom_name": "ref2" }`)
+							So(mappings[2]["key"], ShouldEqual, object.MakeMappingKey("map1"))
+							So(mappings[2]["value"], ShouldResemble, `{ "custom_name": "ref1" }`)
 						})
 
 						Convey("Should return all mappings matching a specific name", func() {
@@ -609,11 +619,16 @@ func TestRPC(t *testing.T) {
 								Name: "map2",
 							})
 							So(err, ShouldBeNil)
-							So(len(resp.Mappings), ShouldEqual, 2)
-							So(resp.Mappings[0].Name, ShouldEqual, object.MakeMappingKey("map2"))
-							So(resp.Mappings[0].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))
-							So(resp.Mappings[1].Name, ShouldEqual, object.MakeMappingKey("map2"))
-							So(resp.Mappings[1].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))
+
+							var mappings []map[string]interface{}
+							err = util.FromJSON(resp.Mappings, &mappings)
+							So(err, ShouldBeNil)
+
+							So(len(mappings), ShouldEqual, 2)
+							So(mappings[0]["key"], ShouldEqual, object.MakeMappingKey("map2"))
+							So(mappings[0]["value"], ShouldResemble, `{ "custom_name": "ref2" }`)
+							So(mappings[1]["key"], ShouldEqual, object.MakeMappingKey("map2"))
+							So(mappings[1]["value"], ShouldResemble, `{ "custom_name": "ref2" }`)
 						})
 
 						Convey("Should return all mappings matching a specific name and limit by 1", func() {
@@ -623,10 +638,14 @@ func TestRPC(t *testing.T) {
 								Limit: 1,
 							})
 							So(err, ShouldBeNil)
-							// pretty.Println(resp.Mappings)
-							So(len(resp.Mappings), ShouldEqual, 1)
-							So(resp.Mappings[0].Name, ShouldEqual, object.MakeMappingKey("map2"))
-							So(resp.Mappings[0].Mapping, ShouldResemble, []byte(`{ "custom_name": "ref2" }`))
+
+							var mappings []map[string]interface{}
+							err = util.FromJSON(resp.Mappings, &mappings)
+							So(err, ShouldBeNil)
+
+							So(len(mappings), ShouldEqual, 1)
+							So(mappings[0]["key"], ShouldEqual, object.MakeMappingKey("map2"))
+							So(mappings[0]["value"], ShouldResemble, `{ "custom_name": "ref2" }`)
 						})
 
 					})
