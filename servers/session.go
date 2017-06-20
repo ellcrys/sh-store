@@ -10,9 +10,9 @@ import (
 	"net"
 
 	"github.com/ellcrys/util"
-	"github.com/ncodes/safehold/servers/common"
-	"github.com/ncodes/safehold/servers/proto_rpc"
-	"github.com/ncodes/safehold/session"
+	"github.com/ellcrys/safehold/servers/common"
+	"github.com/ellcrys/safehold/servers/proto_rpc"
+	"github.com/ellcrys/safehold/session"
 	"golang.org/x/net/context"
 )
 

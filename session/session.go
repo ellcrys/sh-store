@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/ellcrys/util"
-	"github.com/ncodes/patchain"
-	"github.com/ncodes/patchain/cockroach/tables"
+	"github.com/ellcrys/patchain"
+	"github.com/ellcrys/patchain/cockroach/tables"
 	"github.com/pkg/errors"
 )
 

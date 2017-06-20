@@ -5,10 +5,10 @@ import (
 
 	"github.com/asaskevich/govalidator"
 	"github.com/ncodes/mapvalidator"
-	"github.com/ncodes/patchain"
-	"github.com/ncodes/patchain/cockroach/tables"
-	"github.com/ncodes/safehold/servers/common"
-	"github.com/ncodes/safehold/servers/proto_rpc"
+	"github.com/ellcrys/patchain"
+	"github.com/ellcrys/patchain/cockroach/tables"
+	"github.com/ellcrys/safehold/servers/common"
+	"github.com/ellcrys/safehold/servers/proto_rpc"
 )
 
 // validateObjects validates a slice of objects returning all errors found.
