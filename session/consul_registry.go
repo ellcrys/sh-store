@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/asaskevich/govalidator"
-	"github.com/ellcrys/consul/api"
 	"github.com/ellcrys/util"
+	"github.com/hashicorp/consul/api"
 	"github.com/pkg/errors"
 )
 
