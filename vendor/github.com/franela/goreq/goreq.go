@@ -21,6 +21,9 @@ import (
 	"time"
 )
 
+type itimeout interface {
+	Timeout() bool
+}
 type Request struct {
 	headers           []headerTuple
 	cookies           []*http.Cookie
@@ -42,6 +45,7 @@ type Request struct {
 	BasicAuthPassword string
 	CookieJar         http.CookieJar
 	ShowDebug         bool
+	OnBeforeRequest   func(goreq *Request, httpreq *http.Request)
 }
 
 type compression struct {
@@ -54,6 +58,18 @@ type Response struct {
 	*http.Response
 	Uri  string
 	Body *Body
+	req  *http.Request
+}
+
+func (r Response) CancelRequest() {
+	cancelRequest(DefaultTransport, r.req)
+
+}
+
+func cancelRequest(transport interface{}, r *http.Request) {
+	if tp, ok := transport.(transportRequestCanceler); ok {
+		tp.CancelRequest(r)
+	}
 }
 
 type headerTuple struct {
@@ -69,6 +85,10 @@ type Body struct {
 type Error struct {
 	timeout bool
 	Err     error
+}
+
+type transportRequestCanceler interface {
+	CancelRequest(*http.Request)
 }
 
 func (e *Error) Timeout() bool {
@@ -137,52 +157,64 @@ func paramParse(query interface{}) (string, error) {
 	case *url.Values:
 		return query.(*url.Values).Encode(), nil
 	default:
-		var (
-			v = &url.Values{}
-			s = reflect.ValueOf(query)
-			t = reflect.TypeOf(query)
-		)
-		for t.Kind() == reflect.Ptr || t.Kind() == reflect.Interface {
-			s = s.Elem()
-			t = s.Type()
+		var v = &url.Values{}
+		err := paramParseStruct(v, query)
+		return v.Encode(), err
+	}
+}
+
+func paramParseStruct(v *url.Values, query interface{}) error {
+	var (
+		s = reflect.ValueOf(query)
+		t = reflect.TypeOf(query)
+	)
+	for t.Kind() == reflect.Ptr || t.Kind() == reflect.Interface {
+		s = s.Elem()
+		t = s.Type()
+	}
+
+	if t.Kind() != reflect.Struct {
+		return errors.New("Can not parse QueryString.")
+	}
+
+	for i := 0; i < t.NumField(); i++ {
+		var name string
+
+		field := s.Field(i)
+		typeField := t.Field(i)
+
+		if !field.CanInterface() {
+			continue
 		}
-		if t.Kind() == reflect.Struct {
-			for i := 0; i < t.NumField(); i++ {
-				var name string
 
-				field := s.Field(i)
-				typeField := t.Field(i)
+		urlTag := typeField.Tag.Get("url")
+		if urlTag == "-" {
+			continue
+		}
 
-				if !field.CanInterface() {
-					continue
-				}
+		name, opts := parseTag(urlTag)
 
-				urlTag := typeField.Tag.Get("url")
-				if urlTag == "-" {
-					continue
-				}
+		var omitEmpty, squash bool
+		omitEmpty = opts.Contains("omitempty")
+		squash = opts.Contains("squash")
 
-				var omitEmpty bool
-
-				if urlTag != "" {
-					tagName, opts := parseTag(urlTag)
-					name = tagName
-					omitEmpty = opts.Contains("omitempty")
-
-				} else {
-					name = strings.ToLower(typeField.Name)
-				}
-
-				if val := fmt.Sprintf("%v", field.Interface()); !(omitEmpty && len(val) == 0) {
-					v.Add(name, val)
-				}
-
+		if squash {
+			err := paramParseStruct(v, field.Interface())
+			if err != nil {
+				return err
 			}
-			return v.Encode(), nil
-		} else {
-			return "", errors.New("Can not parse QueryString.")
+			continue
+		}
+
+		if urlTag == "" {
+			name = strings.ToLower(typeField.Name)
+		}
+
+		if val := fmt.Sprintf("%v", field.Interface()); !(omitEmpty && len(val) == 0) {
+			v.Add(name, val)
 		}
 	}
+	return nil
 }
 
 func prepareRequestBody(b interface{}) (io.Reader, error) {
@@ -208,15 +240,15 @@ func prepareRequestBody(b interface{}) (io.Reader, error) {
 	}
 }
 
-var defaultDialer = &net.Dialer{Timeout: 1000 * time.Millisecond}
-var defaultTransport = &http.Transport{Dial: defaultDialer.Dial, Proxy: http.ProxyFromEnvironment}
-var defaultClient = &http.Client{Transport: defaultTransport}
+var DefaultDialer = &net.Dialer{Timeout: 1000 * time.Millisecond}
+var DefaultTransport http.RoundTripper = &http.Transport{Dial: DefaultDialer.Dial, Proxy: http.ProxyFromEnvironment}
+var DefaultClient = &http.Client{Transport: DefaultTransport}
 
-var proxyTransport *http.Transport
+var proxyTransport http.RoundTripper
 var proxyClient *http.Client
 
 func SetConnectTimeout(duration time.Duration) {
-	defaultDialer.Timeout = duration
+	DefaultDialer.Timeout = duration
 }
 
 func (r *Request) AddHeader(name string, value string) {
@@ -238,11 +270,12 @@ func (r *Request) AddCookie(c *http.Cookie) {
 func (r Request) WithCookie(c *http.Cookie) Request {
 	r.AddCookie(c)
 	return r
+
 }
 
 func (r Request) Do() (*Response, error) {
-	var transport = defaultTransport
-	var client = defaultClient
+	var client = DefaultClient
+	var transport = DefaultTransport
 	var resUri string
 	var redirectFailed bool
 
@@ -263,10 +296,12 @@ func (r Request) Do() (*Response, error) {
 			// proxy address is in a wrong format
 			return nil, &Error{Err: err}
 		}
-		if proxyTransport == nil {
-			proxyTransport = &http.Transport{Dial: defaultDialer.Dial, Proxy: http.ProxyURL(proxyUrl)}
-			proxyClient = &http.Client{Transport: proxyTransport}
-		} else {
+
+		//If jar is specified new client needs to be built
+		if proxyTransport == nil || client.Jar != nil {
+			proxyTransport = &http.Transport{Dial: DefaultDialer.Dial, Proxy: http.ProxyURL(proxyUrl)}
+			proxyClient = &http.Client{Transport: proxyTransport, Jar: client.Jar}
+		} else if proxyTransport, ok := proxyTransport.(*http.Transport); ok {
 			proxyTransport.Proxy = http.ProxyURL(proxyUrl)
 		}
 		transport = proxyTransport
@@ -292,12 +327,18 @@ func (r Request) Do() (*Response, error) {
 		return nil
 	}
 
-	if r.Insecure {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	} else if transport.TLSClientConfig != nil {
-		// the default TLS client (when transport.TLSClientConfig==nil) is
-		// already set to verify, so do nothing in that case
-		transport.TLSClientConfig.InsecureSkipVerify = false
+	if transport, ok := transport.(*http.Transport); ok {
+		if r.Insecure {
+			if transport.TLSClientConfig != nil {
+				transport.TLSClientConfig.InsecureSkipVerify = true
+			} else {
+				transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+			}
+		} else if transport.TLSClientConfig != nil {
+			// the default TLS client (when transport.TLSClientConfig==nil) is
+			// already set to verify, so do nothing in that case
+			transport.TLSClientConfig.InsecureSkipVerify = false
+		}
 	}
 
 	req, err := r.NewRequest()
@@ -308,12 +349,8 @@ func (r Request) Do() (*Response, error) {
 	}
 
 	timeout := false
-	var timer *time.Timer
 	if r.Timeout > 0 {
-		timer = time.AfterFunc(r.Timeout, func() {
-			transport.CancelRequest(req)
-			timeout = true
-		})
+		client.Timeout = r.Timeout
 	}
 
 	if r.ShowDebug {
@@ -324,19 +361,19 @@ func (r Request) Do() (*Response, error) {
 		log.Println(string(dump))
 	}
 
-	res, err := client.Do(req)
-	if timer != nil {
-		timer.Stop()
+	if r.OnBeforeRequest != nil {
+		r.OnBeforeRequest(&r, req)
 	}
+	res, err := client.Do(req)
 
 	if err != nil {
 		if !timeout {
-			switch err := err.(type) {
-			case *net.OpError:
-				timeout = err.Timeout()
-			case *url.Error:
-				if op, ok := err.Err.(*net.OpError); ok {
-					timeout = op.Timeout()
+			if t, ok := err.(itimeout); ok {
+				timeout = t.Timeout()
+			}
+			if ue, ok := err.(*url.Error); ok {
+				if t, ok := ue.Err.(itimeout); ok {
+					timeout = t.Timeout()
 				}
 			}
 		}
@@ -344,7 +381,11 @@ func (r Request) Do() (*Response, error) {
 		var response *Response
 		//If redirect fails we still want to return response data
 		if redirectFailed {
-			response = &Response{res, resUri, &Body{reader: res.Body}}
+			if res != nil {
+				response = &Response{res, resUri, &Body{reader: res.Body}, req}
+			} else {
+				response = &Response{res, resUri, nil, req}
+			}
 		}
 
 		//If redirect fails and we haven't set a redirect count we shouldn't return an error
@@ -360,18 +401,22 @@ func (r Request) Do() (*Response, error) {
 		if err != nil {
 			return nil, &Error{Err: err}
 		}
-		return &Response{res, resUri, &Body{reader: res.Body, compressedReader: compressedReader}}, nil
-	} else {
-		return &Response{res, resUri, &Body{reader: res.Body}}, nil
+		return &Response{res, resUri, &Body{reader: res.Body, compressedReader: compressedReader}, req}, nil
 	}
+
+	return &Response{res, resUri, &Body{reader: res.Body}, req}, nil
 }
 
 func (r Request) addHeaders(headersMap http.Header) {
 	if len(r.UserAgent) > 0 {
 		headersMap.Add("User-Agent", r.UserAgent)
 	}
-	headersMap.Add("Accept", r.Accept)
-	headersMap.Add("Content-Type", r.ContentType)
+	if r.Accept != "" {
+		headersMap.Add("Accept", r.Accept)
+	}
+	if r.ContentType != "" {
+		headersMap.Add("Content-Type", r.ContentType)
+	}
 }
 
 func (r Request) NewRequest() (*http.Request, error) {
