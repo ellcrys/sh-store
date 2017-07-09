@@ -14,7 +14,7 @@
 
 package main
 
-import "github.com/ellcrys/safehold/cmd"
+import "github.com/ellcrys/elldb/cmd"
 
 func main() {
 	cmd.Execute()
