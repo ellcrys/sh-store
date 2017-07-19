@@ -25,7 +25,11 @@ func (s *RPC) CreateSession(ctx context.Context, req *proto_rpc.Session) (*proto
 		return nil, common.NewSingleAPIErr(400, "", "", "id is invalid. Expected UUIDv4 value", nil)
 	}
 
-	sessionID, err := s.dbSession.CreateSession(util.UUID4(), developerID)
+	if len(req.ID) == 0 {
+		req.ID = util.UUID4()
+	}
+
+	sessionID, err := s.dbSession.CreateSession(req.ID, developerID)
 	if err != nil {
 		logRPC.Errorf("%+v", err)
 		return nil, common.NewSingleAPIErr(500, "", "", "session not created", nil)

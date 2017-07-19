@@ -33,6 +33,7 @@ var (
 func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg) (*proto_rpc.GetObjectsResponse, error) {
 
 	var err error
+	autoFinish := false
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
@@ -107,13 +108,16 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	} else { // session id not provided, create local, unregistered session
 		sessionID = util.UUID4()
 		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		autoFinish = true
 		defer s.dbSession.CommitEnd(sessionID)
 	}
 
 	// coerce objects to be created into slice of maps
 	var objs []map[string]interface{}
 	if err := util.FromJSON2(req.Objects, &objs); err != nil {
-		s.dbSession.RollbackEnd(sessionID)
+		if autoFinish {
+			s.dbSession.RollbackEnd(sessionID)
+		}
 		return nil, common.NewSingleAPIErr(400, "", "", "failed to parse objects", nil)
 	}
 
@@ -133,7 +137,9 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 		var m db.Mapping
 		if err = s.db.Where("name = ? AND identity = ?", req.Mapping, developerID).First(&m).Error; err != nil {
-			s.dbSession.RollbackEnd(sessionID)
+			if autoFinish {
+				s.dbSession.RollbackEnd(sessionID)
+			}
 			if err == gorm.ErrRecordNotFound {
 				return nil, common.NewSingleAPIErr(400, "", "", "mapping not found", nil)
 			}
@@ -144,7 +150,9 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 		// replace custom map fields in objects with the original/standard object column names
 		if err := common.UnMapFields(mapping, objs); err != nil {
-			s.dbSession.RollbackEnd(sessionID)
+			if autoFinish {
+				s.dbSession.RollbackEnd(sessionID)
+			}
 			logRPC.Errorf("%+v", errors.Wrap(err, "failed to unmap object"))
 			return nil, common.ServerError
 		}
@@ -153,18 +161,24 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	// validate the objects
 	vErrs, err := s.validateObjects(objs, mapping)
 	if err != nil {
-		s.dbSession.RollbackEnd(sessionID)
+		if autoFinish {
+			s.dbSession.RollbackEnd(sessionID)
+		}
 		logRPC.Errorf("%+v", errors.Wrap(err, "failed to validate objects"))
 		return nil, common.ServerError
 	} else if len(vErrs) > 0 {
-		s.dbSession.RollbackEnd(sessionID)
+		if autoFinish {
+			s.dbSession.RollbackEnd(sessionID)
+		}
 		return nil, common.NewMultiAPIErr(400, "validation errors", vErrs)
 	}
 
 	// ensure caller has permission to PUT objects on behalf of the object owner
 	// TODO: check oauth permission
 	if developerID != objs[0]["owner_id"] {
-		s.dbSession.RollbackEnd(sessionID)
+		if autoFinish {
+			s.dbSession.RollbackEnd(sessionID)
+		}
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to create objects for the owner", nil)
 	}
 
@@ -178,8 +192,10 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 	// using the session, insert objects
 	if err := session.SendPutOpWithSession(s.dbSession, sessionID, req.Bucket, objectsToCreate); err != nil {
+		if autoFinish {
+			s.dbSession.RollbackEnd(sessionID)
+		}
 		logRPC.Errorf("%+v", err)
-		s.dbSession.RollbackEnd(sessionID)
 		return nil, common.NewSingleAPIErr(500, common.CodePutError, "objects", err.Error(), nil)
 	}
 
@@ -302,11 +318,11 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	// TODO: ensure auth token must be a user token from the owner
 	// and the token authorizes access to the object created by the creator for this developer
 	if developerID != req.Owner {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects for the owner", nil)
+		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner", nil)
 	}
 
 	// include owner, creator and bucket filters
-	var query map[string]interface{}
+	var query = make(map[string]interface{})
 	util.FromJSON(req.Query, &query)
 	query["owner_id"] = req.Owner
 	query["creator_id"] = req.Creator
@@ -319,7 +335,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 		var m db.Mapping
 		if err := s.db.Where("name = ? AND identity = ?", req.Mapping, developerID).First(&m).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "mapping", err.Error(), nil)
+				return nil, common.NewSingleAPIErr(404, common.CodeInvalidParam, "mapping", "mapping not found", nil)
 			}
 			return nil, common.ServerError
 		}
@@ -433,11 +449,11 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	// TODO: ensure auth token must be a user token from the owner
 	// and the token authorizes access to the object created by the creator for this developer
 	if developerID != req.Owner {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects for the owner", nil)
+		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner", nil)
 	}
 
 	// include owner, creator and bucket filters
-	var query map[string]interface{}
+	var query = make(map[string]interface{})
 	util.FromJSON(req.Query, &query)
 	query["owner_id"] = req.Owner
 	query["creator_id"] = req.Creator
