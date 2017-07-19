@@ -8,16 +8,16 @@ import (
 
 	"net"
 
+	"github.com/ellcrys/cocoon/core/config"
+	"github.com/ellcrys/elldb/servers/common"
+	"github.com/ellcrys/elldb/servers/oauth"
+	"github.com/ellcrys/elldb/servers/proto_rpc"
 	"github.com/ellcrys/util"
+	"github.com/fatih/structs"
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/copier"
+	"github.com/jinzhu/gorm"
 	"github.com/labstack/gommon/log"
-	"github.com/ellcrys/cocoon/core/config"
-	"github.com/ellcrys/patchain"
-	"github.com/ellcrys/patchain/object"
-	"github.com/ellcrys/safehold/servers/common"
-	"github.com/ellcrys/safehold/servers/oauth"
-	"github.com/ellcrys/safehold/servers/proto_rpc"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -30,14 +30,12 @@ var logHTTP = config.MakeLogger("http")
 type HTTP struct {
 	rpcServerAddr string
 	oauth         *oauth.OAuth
-	db            patchain.DB
 }
 
 // NewHTTP creates an new http server instance
-func NewHTTP(db patchain.DB, rpcServerAddr string) *HTTP {
+func NewHTTP(rpcServerAddr string, db *gorm.DB) *HTTP {
 	return &HTTP{
 		rpcServerAddr: rpcServerAddr,
-		db:            db,
 		oauth:         oauth.NewOAuth(db),
 	}
 }
@@ -51,7 +49,9 @@ func (s *HTTP) getRouter() *mux.Router {
 	g := r.PathPrefix("/v1").Subrouter()
 
 	// v1 endpoints
+	g.HandleFunc("/buckets", common.EasyHandle(http.MethodPost, s.createBucket))
 	g.HandleFunc("/identities", common.EasyHandle(http.MethodPost, s.createIdentity))
+	g.HandleFunc("/buckets/{bucket}/objects", common.EasyHandle(http.MethodPost, s.createObjects)).Methods(http.MethodPost)
 	g.HandleFunc("/identities/{id}", common.EasyHandle(http.MethodGet, s.getIdentity))
 	g.HandleFunc("/mappings", common.EasyHandle(http.MethodPost, s.createMapping)).Methods(http.MethodPost)
 	g.HandleFunc("/mappings", common.EasyHandle(http.MethodGet, s.getAllMapping)).Methods(http.MethodGet)
@@ -61,7 +61,6 @@ func (s *HTTP) getRouter() *mux.Router {
 	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodDelete, s.deleteSession)).Methods(http.MethodDelete)
 	g.HandleFunc("/sessions/{id}/commit", common.EasyHandle(http.MethodGet, s.commitSession)).Methods(http.MethodGet)
 	g.HandleFunc("/sessions/{id}/rollback", common.EasyHandle(http.MethodGet, s.rollbackSession)).Methods(http.MethodGet)
-	g.HandleFunc("/objects", common.EasyHandle(http.MethodPost, s.createObjects)).Methods(http.MethodPost)
 	g.HandleFunc("/objects/query", common.EasyHandle(http.MethodPost, s.getObjects)).Methods(http.MethodPost)
 	g.HandleFunc("/objects/count", common.EasyHandle(http.MethodPost, s.countObjects)).Methods(http.MethodPost)
 
@@ -70,18 +69,21 @@ func (s *HTTP) getRouter() *mux.Router {
 
 // dialRPC creates a client connection to the RPC API
 // and passes it to the callback function. It will close the connection
-// after the callback function has finished
+// after the callback function returns
 func (s *HTTP) dialRPC(cb func(client proto_rpc.APIClient) error) error {
 	conn, err := grpc.Dial(s.rpcServerAddr, grpc.WithInsecure())
 	if err != nil {
 		return errors.Wrap(err, "failed to dial RPC API")
 	}
 	defer conn.Close()
+	if cb == nil {
+		return nil
+	}
 	return cb(proto_rpc.NewAPIClient(conn))
 }
 
-// Start starts the http server. Passes true to the startedCh channel
-// when started
+// Start starts the http server
+// Passes true to the startedCh channel when started
 func (s *HTTP) Start(addr string, startedCB func(*HTTP)) error {
 
 	_, port, err := net.SplitHostPort(addr)
@@ -91,15 +93,13 @@ func (s *HTTP) Start(addr string, startedCB func(*HTTP)) error {
 	}
 
 	// attempt to connect to the RPC API
-	if err := s.dialRPC(func(client proto_rpc.APIClient) error {
-		return nil
-	}); err != nil {
+	if err := s.dialRPC(nil); err != nil {
 		logHTTP.Errorf("%+v", err)
 		return err
 	}
 
 	time.AfterFunc(2*time.Second, func() {
-		logHTTP.Infof("Started HTTP API server @ :%s", port)
+		logHTTP.Infof("Started server @ :%s", port)
 		if startedCB != nil {
 			startedCB(s)
 		}
@@ -108,24 +108,44 @@ func (s *HTTP) Start(addr string, startedCB func(*HTTP)) error {
 	return http.ListenAndServe(addr, s.getRouter())
 }
 
-// createSession creates a new session
-func (s *HTTP) createSession(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+// createBucket creates a bucket
+func (s *HTTP) createBucket(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+
 	var err error
-	var body proto_rpc.DBSession
-	var resp *proto_rpc.DBSession
+	var body proto_rpc.CreateBucketMsg
+	var resp *proto_rpc.Bucket
 
 	if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 		return common.BodyMalformedError, 400
 	}
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		var md metadata.MD
-		authorization := r.Header.Get("Authorization")
-		if len(authorization) > 0 {
-			md = metadata.Pairs("authorization", authorization)
-		}
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
 		ctx := metadata.NewContext(context.Background(), md)
-		resp, err = client.CreateDBSession(ctx, &body)
+		resp, err = client.CreateBucket(ctx, &body)
+		return err
+	}); err != nil {
+		log.Errorf("%+v", err)
+		return err, 0
+	}
+
+	return common.SingleObjectResp("bucket", structs.New(resp).Map()), 201
+}
+
+// createSession creates a new session
+func (s *HTTP) createSession(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+	var err error
+	var body proto_rpc.Session
+	var resp *proto_rpc.Session
+
+	if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return common.BodyMalformedError, 400
+	}
+
+	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
+		ctx := metadata.NewContext(context.Background(), md)
+		resp, err = client.CreateSession(ctx, &body)
 		return err
 	}); err != nil {
 		logHTTP.Errorf("%+v", err)
@@ -138,16 +158,12 @@ func (s *HTTP) createSession(w http.ResponseWriter, r *http.Request) (interface{
 // getSession gets a new session
 func (s *HTTP) getSession(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
-	var resp *proto_rpc.DBSession
+	var resp *proto_rpc.Session
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		var md metadata.MD
-		authorization := r.Header.Get("Authorization")
-		if len(authorization) > 0 {
-			md = metadata.Pairs("authorization", authorization)
-		}
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
 		ctx := metadata.NewContext(context.Background(), md)
-		resp, err = client.GetDBSession(ctx, &proto_rpc.DBSession{
+		resp, err = client.GetSession(ctx, &proto_rpc.Session{
 			ID: mux.Vars(r)["id"],
 		})
 		return err
@@ -162,16 +178,12 @@ func (s *HTTP) getSession(w http.ResponseWriter, r *http.Request) (interface{}, 
 // deleteSession deletes a session
 func (s *HTTP) deleteSession(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
-	var resp *proto_rpc.DBSession
+	var resp *proto_rpc.Session
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		var md metadata.MD
-		authorization := r.Header.Get("Authorization")
-		if len(authorization) > 0 {
-			md = metadata.Pairs("authorization", authorization)
-		}
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
 		ctx := metadata.NewContext(context.Background(), md)
-		resp, err = client.DeleteDBSession(ctx, &proto_rpc.DBSession{
+		resp, err = client.DeleteSession(ctx, &proto_rpc.Session{
 			ID: mux.Vars(r)["id"],
 		})
 		return err
@@ -186,16 +198,12 @@ func (s *HTTP) deleteSession(w http.ResponseWriter, r *http.Request) (interface{
 // commitSession commits a session
 func (s *HTTP) commitSession(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
-	var resp *proto_rpc.DBSession
+	var resp *proto_rpc.Session
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		var md metadata.MD
-		authorization := r.Header.Get("Authorization")
-		if len(authorization) > 0 {
-			md = metadata.Pairs("authorization", authorization)
-		}
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
 		ctx := metadata.NewContext(context.Background(), md)
-		resp, err = client.CommitSession(ctx, &proto_rpc.DBSession{
+		resp, err = client.CommitSession(ctx, &proto_rpc.Session{
 			ID: mux.Vars(r)["id"],
 		})
 		return err
@@ -210,16 +218,12 @@ func (s *HTTP) commitSession(w http.ResponseWriter, r *http.Request) (interface{
 // rollbackSession rolls back a session
 func (s *HTTP) rollbackSession(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
-	var resp *proto_rpc.DBSession
+	var resp *proto_rpc.Session
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		var md metadata.MD
-		authorization := r.Header.Get("Authorization")
-		if len(authorization) > 0 {
-			md = metadata.Pairs("authorization", authorization)
-		}
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
 		ctx := metadata.NewContext(context.Background(), md)
-		resp, err = client.RollbackSession(ctx, &proto_rpc.DBSession{
+		resp, err = client.RollbackSession(ctx, &proto_rpc.Session{
 			ID: mux.Vars(r)["id"],
 		})
 		return err
@@ -251,7 +255,7 @@ func (s *HTTP) createIdentity(w http.ResponseWriter, r *http.Request) (interface
 	}
 
 	var identity map[string]interface{}
-	util.FromJSON(resp.Object, &identity)
+	util.FromJSON2(resp.Object, &identity)
 
 	return common.SingleObjectResp("identity", identity), 201
 }
@@ -259,22 +263,18 @@ func (s *HTTP) createIdentity(w http.ResponseWriter, r *http.Request) (interface
 // createMapping creates a mapping for an identity
 func (s *HTTP) createMapping(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
+	var resp *proto_rpc.CreateMappingResponse
 	var body struct {
 		Name    string                 `json:"name"`
 		Mapping map[string]interface{} `json:"mapping"`
 	}
-	var resp *proto_rpc.CreateMappingResponse
 
 	if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 		return common.BodyMalformedError, 400
 	}
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		authorization := r.Header.Get("Authorization")
-		var md metadata.MD
-		if len(authorization) > 0 {
-			md = metadata.Pairs("authorization", authorization)
-		}
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{
 			Name:    body.Name,
@@ -292,14 +292,10 @@ func (s *HTTP) createMapping(w http.ResponseWriter, r *http.Request) (interface{
 // getMapping fetches a mapping belonging to the logged in developer
 func (s *HTTP) getMapping(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
-	var md metadata.MD
 	var resp *proto_rpc.GetMappingResponse
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		authorization := r.Header.Get("Authorization")
-		if len(authorization) > 0 {
-			md = metadata.Pairs("authorization", authorization)
-		}
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.GetMapping(ctx, &proto_rpc.GetMappingMsg{
 			Name: mux.Vars(r)["name"],
@@ -317,7 +313,7 @@ func (s *HTTP) getMapping(w http.ResponseWriter, r *http.Request) (interface{}, 
 	}
 
 	var mapping map[string]interface{}
-	util.FromJSON([]byte(respMap["value"].(string)), &mapping)
+	util.FromJSON([]byte(respMap["mapping"].(string)), &mapping)
 
 	return common.SingleObjectResp("mapping", map[string]interface{}{
 		"id":      respMap["id"],
@@ -329,18 +325,13 @@ func (s *HTTP) getMapping(w http.ResponseWriter, r *http.Request) (interface{}, 
 // getAllMapping fetches the most recent mappings belonging to the logged in developer
 func (s *HTTP) getAllMapping(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
-	var md metadata.MD
-	var authorization = r.Header.Get("Authorization")
 	var resp *proto_rpc.GetAllMappingResponse
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		if len(authorization) > 0 {
-			md = metadata.Pairs("authorization", authorization)
-		}
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.GetAllMapping(ctx, &proto_rpc.GetAllMappingMsg{
 			Limit: 50,
-			Name:  r.URL.Query().Get("name"),
 		})
 		return err
 	}); err != nil {
@@ -354,11 +345,10 @@ func (s *HTTP) getAllMapping(w http.ResponseWriter, r *http.Request) (interface{
 
 	for i, mapping := range respMaps {
 		var mappingVal map[string]string
-		util.FromJSON([]byte(mapping["value"].(string)), &mappingVal)
-		_, name, _ := object.SplitKey(mapping["key"].(string))
+		util.FromJSON([]byte(mapping["mapping"].(string)), &mappingVal)
 		attrs[i] = map[string]interface{}{
 			"id":      mapping["id"],
-			"name":    name,
+			"name":    mapping["name"].(string),
 			"mapping": mappingVal,
 		}
 	}
@@ -372,11 +362,7 @@ func (s *HTTP) getIdentity(w http.ResponseWriter, r *http.Request) (interface{},
 	var resp *proto_rpc.GetObjectResponse
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		var md metadata.MD
-		authorization := r.Header.Get("Authorization")
-		if len(authorization) > 0 {
-			md = metadata.Pairs("authorization", authorization)
-		}
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.GetIdentity(ctx, &proto_rpc.GetIdentityMsg{
 			ID: mux.Vars(r)["id"],
@@ -388,38 +374,35 @@ func (s *HTTP) getIdentity(w http.ResponseWriter, r *http.Request) (interface{},
 	}
 
 	var identity map[string]interface{}
-	util.FromJSON(resp.Object, &identity)
+	util.FromJSON2(resp.Object, &identity)
 
 	return common.SingleObjectResp("identity", identity), 200
 }
 
-// createObjects creates an arbitrary object.
-// Requires an app token included in the authorization header.
-// If mapping name is provided, pass the mapping name and body encoded in json to rpc.CreateObjects
-// so that it can process/unmap the custom/mapped fields in the request body.
-// Otherwise, copy the body into a slice of proto_rpc.Object and pass this.
+// createObjects creates an object and can optionally use an existing mapping
+// to process custom object fields.
+// Requires an app token.
+// TODO: Requires user token for user-owned objects
 func (s *HTTP) createObjects(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 
 	var err error
 	var bodyJSON []map[string]interface{}
 	var resp *proto_rpc.GetObjectsResponse
-	var mappingName = r.URL.Query().Get("mapping")
-	var sessionID = r.URL.Query().Get("session")
-	var md = metadata.Join(metadata.Pairs("session_id", sessionID))
-	var authorization = r.Header.Get("Authorization")
+	var md = metadata.Join(
+		metadata.Pairs("session_id", r.URL.Query().Get("session")),
+		metadata.Pairs("authorization", r.Header.Get("Authorization")),
+	)
 
-	if err = json.NewDecoder(r.Body).Decode(&bodyJSON); err != nil {
+	if err = util.DecodeJSON(r.Body, &bodyJSON); err != nil {
 		return common.BodyMalformedError, 400
 	}
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		if len(authorization) > 0 {
-			md = metadata.Join(md, metadata.Pairs("authorization", authorization))
-		}
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{
+			Bucket:  mux.Vars(r)["bucket"],
 			Objects: util.MustStringify(bodyJSON),
-			Mapping: mappingName,
+			Mapping: r.URL.Query().Get("mapping"),
 		})
 		return err
 	}); err != nil {
@@ -428,7 +411,7 @@ func (s *HTTP) createObjects(w http.ResponseWriter, r *http.Request) (interface{
 	}
 
 	var objects []map[string]interface{}
-	util.FromJSON(resp.Objects, &objects)
+	util.FromJSON2(resp.Objects, &objects)
 
 	return common.MultiObjectResp("objects", objects), 201
 }
@@ -440,9 +423,9 @@ func (s *HTTP) getObjects(w http.ResponseWriter, r *http.Request) (interface{}, 
 	var rpcBody proto_rpc.GetObjectMsg
 	var mappingName = r.URL.Query().Get("mapping")
 	var sessionID = r.URL.Query().Get("session")
-	var md = metadata.Join(metadata.Pairs("session_id", sessionID))
-	var authorization = r.Header.Get("Authorization")
+	var md = metadata.Join(metadata.Pairs("session_id", sessionID), metadata.Pairs("authorization", r.Header.Get("Authorization")))
 	var body struct {
+		Bucket  string                 `json:"bucket"`
 		Query   map[string]interface{} `json:"query"`
 		Owner   string                 `json:"owner"`
 		Creator string                 `json:"creator"`
@@ -462,9 +445,6 @@ func (s *HTTP) getObjects(w http.ResponseWriter, r *http.Request) (interface{}, 
 	rpcBody.Mapping = mappingName
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		if len(authorization) > 0 {
-			md = metadata.Join(md, metadata.Pairs("authorization", authorization))
-		}
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.GetObjects(ctx, &rpcBody)
 		return err
@@ -484,7 +464,10 @@ func (s *HTTP) countObjects(w http.ResponseWriter, r *http.Request) (interface{}
 	var err error
 	var resp *proto_rpc.ObjectCountResponse
 	var rpcBody proto_rpc.GetObjectMsg
+	var sessionID = r.URL.Query().Get("session")
+	var md = metadata.Join(metadata.Pairs("session_id", sessionID), metadata.Pairs("authorization", r.Header.Get("Authorization")))
 	var body struct {
+		Bucket  string                 `json:"bucket"`
 		Query   map[string]interface{} `json:"query"`
 		Owner   string                 `json:"owner"`
 		Creator string                 `json:"creator"`
@@ -497,14 +480,7 @@ func (s *HTTP) countObjects(w http.ResponseWriter, r *http.Request) (interface{}
 	copier.Copy(&rpcBody, body)
 	rpcBody.Query = util.MustStringify(body.Query)
 
-	var sessionID = r.URL.Query().Get("session")
-
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		var md = metadata.Join(metadata.Pairs("session_id", sessionID))
-		authorization := r.Header.Get("Authorization")
-		if len(authorization) > 0 {
-			md = metadata.Join(md, metadata.Pairs("authorization", authorization))
-		}
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.CountObjects(ctx, &rpcBody)
 		return err

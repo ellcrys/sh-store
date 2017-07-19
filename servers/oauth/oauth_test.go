@@ -10,9 +10,9 @@ import (
 
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/gorm"
-	"github.com/ellcrys/safehold/core/db/cockroach"
-	"github.com/ellcrys/safehold/core/object"
-	"github.com/ellcrys/safehold/core/servers/common"
+	"github.com/ellcrys/elldb/core/db/cockroach"
+	"github.com/ellcrys/elldb/core/object"
+	"github.com/ellcrys/elldb/core/servers/common"
 	logging "github.com/op/go-logging"
 	. "github.com/smartystreets/goconvey/convey"
 )

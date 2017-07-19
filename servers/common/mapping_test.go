@@ -75,6 +75,22 @@ func TestMapping(t *testing.T) {
 
 	Convey(".MapFields", t, func() {
 
+		Convey("Should return nil if mapping is empty", func() {
+			unmapped := map[string]interface{}{
+				"val": "12",
+			}
+			err := MapFields(nil, unmapped)
+			So(err, ShouldBeNil)
+		})
+
+		Convey("Should return error if unmapped object is not a map or slice of map", func() {
+			err := MapFields(map[string]string{
+				"my_key": "key",
+			}, "unexpected_type")
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldEqual, "invalid mappedObj type. Expected a map or slice of map")
+		})
+
 		Convey("Should successfully apply mapping to a single map", func() {
 			mapping := map[string]string{
 				"my_key": "key",

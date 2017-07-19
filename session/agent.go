@@ -7,10 +7,10 @@ import (
 	"sync"
 
 	"github.com/asaskevich/govalidator"
-	"github.com/ellcrys/patchain"
-	"github.com/ellcrys/patchain/cockroach/tables"
-	"github.com/ellcrys/patchain/object"
-	"github.com/ellcrys/safehold/config"
+	"github.com/ellcrys/elldb/config"
+	"github.com/ellcrys/elldb/servers/db"
+	"github.com/jinzhu/gorm"
+	"github.com/ncodes/jsq"
 	"github.com/pkg/errors"
 )
 
@@ -38,15 +38,36 @@ var (
 
 // Op represents an agent operation
 type Op struct {
-	OpType          OpType
-	PutData         interface{}
-	QueryWithJSQ    string
-	QueryWithObject *tables.Object
-	Out             interface{}
-	Done            chan struct{}
-	Limit           int
-	OrderBy         string
-	Error           error
+
+	// Operation type
+	OpType OpType
+
+	// Bucket name to query
+	Bucket string
+
+	// PutObjects holds the list of objects to put in the Bucket
+	PutObjects []*db.Object
+
+	// QueryWithJSQ is the query expression for retrieving objects
+	QueryWithJSQ string
+
+	// QueryWithObject is the query object for retrieving objects
+	QueryWithObject *db.Object
+
+	// Out will be populated with queried objects
+	Out interface{}
+
+	// Done is closed when the operation is completed
+	Done chan struct{}
+
+	// Limit determines the number of objects fetched
+	Limit int
+
+	// OrderBy determines the ordering of the fetched objects
+	OrderBy string
+
+	// Error contains the last error that occurred during the operation
+	Error error
 }
 
 // Agent defines a structure for an agent
@@ -55,20 +76,19 @@ type Agent struct {
 	sync.Mutex
 	opChan     chan *Op
 	curOp      *Op
-	db         patchain.DB
+	db         *gorm.DB
 	Error      error
 	stop       bool
-	o          *object.Object
 	busy       bool
-	tx         patchain.DB
+	tx         *gorm.DB
 	txFinished bool
 	began      bool
 	debug      bool
 }
 
 // NewAgent creates a new agent
-func NewAgent(db patchain.DB, opChan chan *Op) *Agent {
-	return &Agent{db: db, opChan: opChan, o: object.NewObject(db)}
+func NewAgent(db *gorm.DB, opChan chan *Op) *Agent {
+	return &Agent{db: db, opChan: opChan}
 }
 
 // Reset resets the agent
@@ -77,6 +97,7 @@ func (a *Agent) Reset() {
 	a.stop = false
 	a.busy = false
 	a.txFinished = false
+	a.curOp = nil
 	a.newTx()
 }
 
@@ -88,7 +109,7 @@ func (a *Agent) Stop() {
 	a.stop = true
 }
 
-// put an object
+// put one or more objects
 func (a *Agent) put() error {
 	a.Lock()
 	defer a.Unlock()
@@ -97,8 +118,7 @@ func (a *Agent) put() error {
 		return fmt.Errorf("agent has not started. Did you call Start()?")
 	}
 
-	var dbOp = patchain.UseDBOption{DB: a.tx}
-	return a.o.Put(a.curOp.PutData, &dbOp)
+	return db.CreateObjects(a.tx, a.curOp.Bucket, a.curOp.PutObjects)
 }
 
 // get gets objects by query with JSQ or a putchain.Object.
@@ -115,18 +135,18 @@ func (a *Agent) get() error {
 		return fmt.Errorf("operation object is required")
 	}
 
-	var finalQueryObj *tables.Object
+	var query db.Object
 
 	// Use JSQ enabled query if op.QueryWithJSQ is set
-	if a.curOp.QueryWithJSQ != "" {
+	if len(a.curOp.QueryWithJSQ) > 0 {
 
 		if !govalidator.IsJSON(a.curOp.QueryWithJSQ) {
 			return fmt.Errorf("query must be a json string")
 		}
 
-		jsq := a.tx.NewQuery()
+		jsq := jsq.NewJSQ(db.GetValidObjectFields())
 		if err := jsq.Parse(a.curOp.QueryWithJSQ); err != nil {
-			return err
+			return fmt.Errorf("parser:%s", err)
 		}
 
 		sql, args, err := jsq.ToSQL()
@@ -138,28 +158,23 @@ func (a *Agent) get() error {
 			logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, a.curOp.OrderBy, a.curOp.Limit)
 		}
 
-		finalQueryObj = &tables.Object{
-			QueryParams: patchain.QueryParams{
+		query = db.Object{
+			QueryParams: db.QueryParams{
 				Limit:   a.curOp.Limit,
 				OrderBy: a.curOp.OrderBy,
-				Expr: patchain.Expr{
+				Expr: db.Expr{
 					Expr: sql,
 					Args: args,
 				},
 			},
 		}
 	} else {
-		finalQueryObj = a.curOp.QueryWithObject
-		finalQueryObj.QueryParams.Limit = a.curOp.Limit
-		finalQueryObj.QueryParams.OrderBy = a.curOp.OrderBy
+		query = *a.curOp.QueryWithObject
+		query.QueryParams.Limit = a.curOp.Limit
+		query.QueryParams.OrderBy = a.curOp.OrderBy
 	}
 
-	err := a.tx.GetAll(finalQueryObj, a.curOp.Out)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return db.QueryObjects(a.tx, &query, a.curOp.Out)
 }
 
 // counts object that match a query
@@ -175,18 +190,18 @@ func (a *Agent) count() error {
 		return fmt.Errorf("operation object is required")
 	}
 
-	var finalQueryObj *tables.Object
+	var query db.Object
 
 	// Use JSQ enabled query if op.QueryWithJSQ is set
-	if a.curOp.QueryWithJSQ != "" {
+	if len(a.curOp.QueryWithJSQ) > 0 {
 
 		if !govalidator.IsJSON(a.curOp.QueryWithJSQ) {
 			return fmt.Errorf("query must be a json string")
 		}
 
-		jsq := a.tx.NewQuery()
+		jsq := jsq.NewJSQ(db.GetValidObjectFields())
 		if err := jsq.Parse(a.curOp.QueryWithJSQ); err != nil {
-			return err
+			return fmt.Errorf("parser:%s", err)
 		}
 
 		sql, args, err := jsq.ToSQL()
@@ -198,28 +213,19 @@ func (a *Agent) count() error {
 			logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, a.curOp.OrderBy, a.curOp.Limit)
 		}
 
-		finalQueryObj = &tables.Object{
-			QueryParams: patchain.QueryParams{
-				Limit:   a.curOp.Limit,
-				OrderBy: a.curOp.OrderBy,
-				Expr: patchain.Expr{
+		query = db.Object{
+			QueryParams: db.QueryParams{
+				Expr: db.Expr{
 					Expr: sql,
 					Args: args,
 				},
 			},
 		}
 	} else {
-		finalQueryObj = a.curOp.QueryWithObject
-		finalQueryObj.QueryParams.Limit = a.curOp.Limit
-		finalQueryObj.QueryParams.OrderBy = a.curOp.OrderBy
+		query = *a.curOp.QueryWithObject
 	}
 
-	err := a.tx.Count(finalQueryObj, a.curOp.Out)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return db.CountObjects(a.tx, &query, a.curOp.Out)
 }
 
 // Debug turns on logging
@@ -242,7 +248,7 @@ func (a *Agent) newTx() {
 func (a *Agent) commit() {
 	if a.tx != nil && !a.txFinished {
 		a.Lock()
-		a.Error = a.tx.Commit()
+		a.Error = a.tx.Commit().Error
 		a.txFinished = true
 		a.Unlock()
 		a.newTx()
@@ -253,7 +259,7 @@ func (a *Agent) commit() {
 func (a *Agent) rollback() {
 	if a.tx != nil && !a.txFinished {
 		a.Lock()
-		a.Error = a.tx.Rollback()
+		a.Error = a.tx.Rollback().Error
 		a.txFinished = true
 		a.Unlock()
 		a.newTx()

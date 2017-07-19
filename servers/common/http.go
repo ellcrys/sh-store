@@ -54,6 +54,7 @@ func EasyHandle(method string, handler func(w http.ResponseWriter, r *http.Reque
 
 			if apiError.StatusCode != 0 {
 				status = apiError.StatusCode
+				apiError.StatusCode = 0
 			}
 
 			w.Header().Set("Content-Type", "application/json")

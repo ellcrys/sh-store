@@ -4,19 +4,19 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	"strings"
-
+	"github.com/ellcrys/elldb/servers/common"
+	"github.com/ellcrys/elldb/servers/db"
+	"github.com/ellcrys/elldb/servers/proto_rpc"
+	"github.com/ellcrys/elldb/session"
 	"github.com/ellcrys/util"
 	"github.com/fatih/structs"
-	"github.com/ellcrys/patchain"
-	"github.com/ellcrys/patchain/cockroach/tables"
-	"github.com/ellcrys/safehold/servers/common"
-	"github.com/ellcrys/safehold/servers/proto_rpc"
-	"github.com/ellcrys/safehold/session"
+	"github.com/jinzhu/gorm"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 )
@@ -36,7 +36,19 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
+	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
+
+	if len(req.Bucket) == 0 {
+		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
+	}
+
+	// check if bucket exists
+	if err = s.db.Where("name = ? AND identity = ?", req.Bucket, developerID).First(&db.Bucket{}).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, common.NewSingleAPIErr(404, "", "bucket", "bucket not found", nil)
+		}
+		return nil, common.ServerError
+	}
 
 	// Handle session
 	if len(sessionID) > 0 {
@@ -44,7 +56,7 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 		if !s.dbSession.HasSession(sessionID) {
 
 			// abort further operations
-			if localOnly {
+			if checkLocalOnly {
 				return nil, fmt.Errorf("session not found")
 			}
 
@@ -70,9 +82,9 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 			defer client.Close()
 
 			// make call to the session host. Include the session_id, auth token of the current request
-			// and set local-only to force the RPC method to only perform local object creation
+			// and set check-local-only to force the RPC method to only perform local object creation
 			server := proto_rpc.NewAPIClient(client)
-			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "local-only", "true"))
+			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "check-local-only", "true"))
 			resp, err := server.CreateObjects(ctx, req)
 			if err != nil {
 				if grpc.ErrorDesc(err) == "session not found" {
@@ -98,14 +110,16 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 		defer s.dbSession.CommitEnd(sessionID)
 	}
 
+	// coerce objects to be created into slice of maps
 	var objs []map[string]interface{}
-	if err := util.FromJSON(req.Objects, &objs); err != nil {
+	if err := util.FromJSON2(req.Objects, &objs); err != nil {
 		s.dbSession.RollbackEnd(sessionID)
 		return nil, common.NewSingleAPIErr(400, "", "", "failed to parse objects", nil)
 	}
 
-	// add creator_id and include developer as the owner_id if any object is missing it
+	// add developer as the creator, owner if 'owner_id' is unset and set created_at
 	for _, obj := range objs {
+		obj["created_at"] = time.Now().UnixNano()
 		obj["creator_id"] = developerID
 		if obj["owner_id"] == nil {
 			obj["owner_id"] = developerID
@@ -114,14 +128,21 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 	var mapping map[string]string
 
-	// if mapping name is provided, get the mapping and unmap the objects
+	// if a mapping is provided, get the mapping and unmap the objects with it
 	if len(req.Mapping) > 0 {
-		mapping, err = s.getMappingWithSession(sessionID, req.Mapping, developerID)
-		if err != nil {
+
+		var m db.Mapping
+		if err = s.db.Where("name = ? AND identity = ?", req.Mapping, developerID).First(&m).Error; err != nil {
 			s.dbSession.RollbackEnd(sessionID)
-			return nil, err
+			if err == gorm.ErrRecordNotFound {
+				return nil, common.NewSingleAPIErr(400, "", "", "mapping not found", nil)
+			}
+			return nil, common.ServerError
 		}
 
+		util.FromJSON([]byte(m.Mapping), &mapping)
+
+		// replace custom map fields in objects with the original/standard object column names
 		if err := common.UnMapFields(mapping, objs); err != nil {
 			s.dbSession.RollbackEnd(sessionID)
 			logRPC.Errorf("%+v", errors.Wrap(err, "failed to unmap object"))
@@ -129,43 +150,43 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 		}
 	}
 
+	// validate the objects
 	vErrs, err := s.validateObjects(objs, mapping)
 	if err != nil {
 		s.dbSession.RollbackEnd(sessionID)
 		logRPC.Errorf("%+v", errors.Wrap(err, "failed to validate objects"))
 		return nil, common.ServerError
-	}
-
-	if len(vErrs) > 0 {
+	} else if len(vErrs) > 0 {
 		s.dbSession.RollbackEnd(sessionID)
 		return nil, common.NewMultiAPIErr(400, "validation errors", vErrs)
 	}
 
 	// ensure caller has permission to PUT objects on behalf of the object owner
-	if developerID != objs[0]["owner_id"].(string) {
+	// TODO: check oauth permission
+	if developerID != objs[0]["owner_id"] {
 		s.dbSession.RollbackEnd(sessionID)
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to create objects for the owner", nil)
 	}
 
-	var patchainObjs []*tables.Object
-
-	// create final patchain objects
+	// create db objects to be inserted
+	var objectsToCreate []*db.Object
 	for _, obj := range objs {
-		var o tables.Object
+		var o db.Object
 		util.CopyToStruct(&o, obj)
-		patchainObjs = append(patchainObjs, &o)
+		objectsToCreate = append(objectsToCreate, &o)
 	}
 
-	if err := session.SendPutOpWithSession(s.dbSession, sessionID, patchainObjs); err != nil {
+	// using the session, insert objects
+	if err := session.SendPutOpWithSession(s.dbSession, sessionID, req.Bucket, objectsToCreate); err != nil {
 		logRPC.Errorf("%+v", err)
 		s.dbSession.RollbackEnd(sessionID)
 		return nil, common.NewSingleAPIErr(500, common.CodePutError, "objects", err.Error(), nil)
 	}
 
-	// get the updated object and re-apply mapping
+	// reapply custom mapped fields to inserted objects so the caller
 	objs = nil
-	for _, updatedObj := range patchainObjs {
-		obj := structs.New(updatedObj).Map()
+	for _, o := range objectsToCreate {
+		obj := structs.New(o).Map()
 		common.MapFields(mapping, obj)
 		objs = append(objs, obj)
 	}
@@ -196,7 +217,12 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	developerID := ctx.Value(CtxIdentity).(string)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
-	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
+	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
+
+	// bucket is required
+	if len(req.Bucket) == 0 {
+		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
+	}
 
 	// Handle session if provided
 	if len(sessionID) > 0 {
@@ -206,7 +232,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 		if !s.dbSession.HasSession(sessionID) {
 
 			// abort further operations
-			if localOnly {
+			if checkLocalOnly {
 				return nil, fmt.Errorf("session not found")
 			}
 
@@ -233,10 +259,10 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 			// make call to the session host server.
 			// include the session_id, auth token of the current request
-			// and set local-only to force the RPC method
+			// and set check-local-only to force the RPC method
 			// to only perform local object creation
 			server := proto_rpc.NewAPIClient(client)
-			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "local-only", "true"))
+			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "check-local-only", "true"))
 			resp, err := server.GetObjects(ctx, req)
 			if err != nil {
 				if grpc.ErrorDesc(err) == "session not found" {
@@ -262,28 +288,6 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 		defer s.dbSession.CommitEnd(sessionID)
 	}
 
-	// if owner is set and not the same as the developer id, check if it exists
-	if len(req.Owner) > 0 && req.Owner != developerID {
-		if err = session.SendQueryOpWithSession(s.dbSession, sessionID, "", &tables.Object{ID: req.Owner}, 1, "", &tables.Object{}); err != nil {
-			if err == patchain.ErrNotFound {
-				return nil, common.NewSingleAPIErr(404, "", "", "owner not found", nil)
-			}
-			logRPC.Errorf("%+v", err)
-			return nil, common.ServerError
-		}
-	}
-
-	// if creator is set and not the same as the developer id, check if it exists
-	if len(req.Creator) > 0 && req.Creator != developerID {
-		if err = session.SendQueryOpWithSession(s.dbSession, sessionID, "", &tables.Object{ID: req.Creator}, 1, "", &tables.Object{}); err != nil {
-			if err == patchain.ErrNotFound {
-				return nil, common.NewSingleAPIErr(404, "", "", "creator not found", nil)
-			}
-			logRPC.Errorf("%+v", err)
-			return nil, common.ServerError
-		}
-	}
-
 	// set default owner as the developer if not set
 	if len(req.Owner) == 0 {
 		req.Owner = developerID
@@ -301,31 +305,36 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects for the owner", nil)
 	}
 
-	// include owner and creator filters
+	// include owner, creator and bucket filters
 	var query map[string]interface{}
 	util.FromJSON(req.Query, &query)
 	query["owner_id"] = req.Owner
 	query["creator_id"] = req.Creator
+	query["bucket"] = req.Bucket
 
 	var mapping map[string]string
 
 	// if mapping is provided in request, fetch it
 	if len(req.Mapping) > 0 {
-		mapping, err = s.getMappingWithSession(sessionID, req.Mapping, developerID)
-		if err != nil {
-			return nil, err
+		var m db.Mapping
+		if err := s.db.Where("name = ? AND identity = ?", req.Mapping, developerID).First(&m).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "mapping", err.Error(), nil)
+			}
+			return nil, common.ServerError
 		}
+		util.FromJSON([]byte(m.Mapping), &mapping)
 	}
 
-	// unmap query fields
+	// using the mapping, convert custom mapped fields to the original object column names
 	common.UnMapFields(mapping, query)
 
-	var fetchedObjs []*tables.Object
-	if err = session.SendQueryOpWithSession(s.dbSession, sessionID, string(util.MustStringify(query)), nil, int(req.Limit), orderByToString(req.Order), &fetchedObjs); err != nil {
-		if strings.Contains(err.Error(), "unknown query field") {
-			return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "query", err.Error(), nil)
+	var fetchedObjs []*db.Object
+	if err = session.SendQueryOpWithSession(s.dbSession, sessionID, req.Bucket, string(util.MustStringify(query)), nil, int(req.Limit), orderByToString(req.Order), &fetchedObjs); err != nil {
+		if strings.Contains(err.Error(), "parser") {
+			msg := strings.SplitN(err.Error(), ":", 2)[1]
+			return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "query", msg, nil)
 		}
-		logRPC.Errorf("%+v", err)
 		return nil, common.ServerError
 	}
 
@@ -348,7 +357,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	developerID := ctx.Value(CtxIdentity).(string)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
-	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
+	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	// check if session exist in the in-memory session cache,
 	// use it else check if it exist on the session registry. If it does,
@@ -356,7 +365,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	if sessionID != "" {
 		if !s.dbSession.HasSession(sessionID) {
 
-			if localOnly {
+			if checkLocalOnly {
 				return nil, fmt.Errorf("session not found")
 			}
 
@@ -383,10 +392,10 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 
 			// make call to the session host server.
 			// include the session_id, auth token of the current request
-			// and set local-only to force the RPC method
+			// and set check-local-only to force the RPC method
 			// to only perform local object creation
 			server := proto_rpc.NewAPIClient(client)
-			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "local-only", "true"))
+			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "check-local-only", "true"))
 			resp, err := server.CountObjects(ctx, req)
 			if err != nil {
 				if grpc.ErrorDesc(err) == "session not found" {
@@ -412,28 +421,6 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 		defer s.dbSession.CommitEnd(sessionID)
 	}
 
-	// if owner is set and not the same as the developer id, check if it exists
-	if len(req.Owner) > 0 && req.Owner != developerID {
-		if err := session.SendQueryOpWithSession(s.dbSession, sessionID, "", &tables.Object{ID: req.Owner}, 1, "", &tables.Object{}); err != nil {
-			if err == patchain.ErrNotFound {
-				return nil, common.NewSingleAPIErr(404, "", "", "owner not found", nil)
-			}
-			logRPC.Errorf("%+v", err)
-			return nil, common.ServerError
-		}
-	}
-
-	// if creator is set and not the same as the developer id, check if it exists
-	if len(req.Creator) > 0 && req.Creator != developerID {
-		if err := session.SendQueryOpWithSession(s.dbSession, sessionID, "", &tables.Object{ID: req.Creator}, 1, "", &tables.Object{}); err != nil {
-			if err == patchain.ErrNotFound {
-				return nil, common.NewSingleAPIErr(404, "", "", "creator not found", nil)
-			}
-			logRPC.Errorf("%+v", err)
-			return nil, common.ServerError
-		}
-	}
-
 	// default owner and creator
 	if len(req.Owner) == 0 {
 		req.Owner = developerID
@@ -449,14 +436,15 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects for the owner", nil)
 	}
 
-	// include owner and creator filters
+	// include owner, creator and bucket filters
 	var query map[string]interface{}
 	util.FromJSON(req.Query, &query)
 	query["owner_id"] = req.Owner
 	query["creator_id"] = req.Creator
+	query["bucket"] = req.Bucket
 
 	var count int64
-	if err := session.SendCountOpWithSession(s.dbSession, sessionID, string(util.MustStringify(query)), nil, &count); err != nil {
+	if err := session.SendCountOpWithSession(s.dbSession, sessionID, req.Bucket, string(util.MustStringify(query)), nil, &count); err != nil {
 		logRPC.Errorf("%+v", err)
 		return nil, common.ServerError
 	}

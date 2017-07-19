@@ -3,27 +3,31 @@ package cmd
 import (
 	"os"
 
-	"github.com/ellcrys/util"
 	"github.com/ellcrys/cocoon/core/common"
-	"github.com/ellcrys/patchain/cockroach"
-	"github.com/ellcrys/safehold/config"
-	"github.com/ellcrys/safehold/servers"
+	"github.com/ellcrys/elldb/config"
+	"github.com/ellcrys/elldb/servers"
+	"github.com/ellcrys/util"
 	"github.com/spf13/cobra"
 )
 
 var (
 
 	// address to bind RPC server to
-	bindAddrRPC = util.Env("SH_RPC_ADDR", "localhost:9002")
+	bindAddrRPC = util.Env("ELLDB_RPC_ADDR", "localhost:9002")
 
 	// address to bind HTTP server to
-	bindAddrHTTP = util.Env("SH_HTTP_ADDR", "localhost:9001")
+	bindAddrHTTP = util.Env("ELLDB_HTTP_ADDR", "localhost:9001")
 
 	// database name of the global patchain database
-	databaseName = util.Env("SH_PATCHAIN_DB_NAME", "safehold_dev")
+	databaseName = util.Env("ELLDB_PATCHAIN_DB_NAME", "safehold_dev")
 
 	// partitionChainConStr connection string
-	partitionChainConStr = util.Env("SH_PATCHAIN_CONSTR", "postgresql://root@localhost:26257/"+databaseName+"?sslmode=disable")
+	partitionChainConStr = util.Env("ELLDB_PATCHAIN_CONSTR", "postgresql://root@localhost:26257/"+databaseName+"?sslmode=disable")
+
+	// requiredEnv includes the environment variables required to start
+	requiredEnv = []string{
+		"AUTH_SECRET",
+	}
 )
 
 // startCmd represents the start command
@@ -37,29 +41,23 @@ var startCmd = &cobra.Command{
 		defer log.Info("Stopped")
 
 		// enforce required environment variables
-		if envNotSet := common.HasEnv([]string{
-			"AUTH_SECRET",
-		}...); len(envNotSet) > 0 {
-			log.Fatalf("The following environment variable must be set: %v", envNotSet)
+		if envNotSet := common.HasEnv(requiredEnv...); len(envNotSet) > 0 {
+			log.Fatalf("The following environment variable are required: %v", envNotSet)
 		}
 
 		log.Infof("Running in '%s' environment", util.Env("ENV", "development"))
 
-		db := cockroach.NewDB()
-		db.ConnectionString = partitionChainConStr
-		rpcServer := servers.NewRPC(db)
-		httpServer := servers.NewHTTP(db, bindAddrRPC)
+		rpcServer := servers.NewRPC()
 
 		// terminate app gracefully
 		util.OnTerminate(func(s os.Signal) {
 			log.Info("Termination signal received. Gracefully shutting down")
 			rpcServer.Stop()
-			db.Close()
 			os.Exit(0)
 		})
 
-		// create rpc server, pass database implementation
 		if err := rpcServer.Start(bindAddrRPC, func(s *servers.RPC) {
+			httpServer := servers.NewHTTP(bindAddrRPC, rpcServer.GetDB())
 			httpServer.Start(bindAddrHTTP, nil)
 		}); err != nil {
 			return

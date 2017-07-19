@@ -7,9 +7,9 @@ import (
 
 	"sync"
 
+	"github.com/ellcrys/elldb/servers/db"
 	"github.com/ellcrys/util"
-	"github.com/ellcrys/patchain"
-	"github.com/ellcrys/patchain/cockroach/tables"
+	"github.com/jinzhu/gorm"
 	"github.com/pkg/errors"
 )
 
@@ -26,7 +26,7 @@ func init() {
 
 func getNodeAddr() (string, int, error) {
 	nodeAddr := "127.0.0.1"
-	_, nodePort, err := net.SplitHostPort(util.Env("SH_RPC_ADDR", "localhost:9002"))
+	_, nodePort, err := net.SplitHostPort(util.Env("ELLDB_RPC_ADDR", "localhost:9002"))
 	if err != nil {
 		return "", 0, errors.Wrap(err, "failed to split rpc addr")
 	}
@@ -43,7 +43,7 @@ type AgentInfo struct {
 // Session defines a structure for a partition chain session manager
 type Session struct {
 	sync.Mutex
-	db         patchain.DB
+	db         *gorm.DB
 	agents     map[string]*AgentInfo
 	sessionReg SessionRegistry
 }
@@ -57,7 +57,7 @@ func NewSession(sessionReg SessionRegistry) *Session {
 }
 
 // SetDB sets the db connection to use directly
-func (s *Session) SetDB(db patchain.DB) {
+func (s *Session) SetDB(db *gorm.DB) {
 	s.db = db
 }
 
@@ -203,7 +203,7 @@ func (s *Session) createSession(id, identityID string, registered bool) (string,
 	// create the new session agent, start it on a goroutine
 	// and save a reference to it.
 	msgChan := make(chan *Op)
-	agent := NewAgent(s.db.NewDB(), msgChan)
+	agent := NewAgent(s.db.New(), msgChan)
 	go agent.Start(func() { // on stop
 		s.End(id) // remove agent
 	})
@@ -244,7 +244,7 @@ func (s *Session) registerSession(sid string, identityID string) error {
 }
 
 // SendQueryOp sends a query operation
-func SendQueryOp(ses *Session, queryWithJSQ string, queryWithObj *tables.Object, limit int, order string, out interface{}) error {
+func SendQueryOp(ses *Session, queryWithJSQ string, queryWithObj *db.Object, limit int, order string, out interface{}) error {
 	sid := ses.CreateUnregisteredSession(util.UUID4(), util.UUID4())
 	if err := ses.SendOp(sid, &Op{
 		OpType:          OpGetObjects,
@@ -261,13 +261,14 @@ func SendQueryOp(ses *Session, queryWithJSQ string, queryWithObj *tables.Object,
 }
 
 // SendQueryOpWithSession sends a query operation using an existing session id
-func SendQueryOpWithSession(ses *Session, sid, queryWithJSQ string, queryWithObj *tables.Object, limit int, order string, out interface{}) error {
+func SendQueryOpWithSession(ses *Session, sid, bucket, queryWithJSQ string, queryWithObj *db.Object, limit int, order string, out interface{}) error {
 	agent := ses.GetAgent(sid)
 	if agent == nil {
 		return fmt.Errorf("session not found")
 	}
 	if err := ses.SendOp(sid, &Op{
 		OpType:          OpGetObjects,
+		Bucket:          bucket,
 		QueryWithJSQ:    queryWithJSQ,
 		QueryWithObject: queryWithObj,
 		Done:            make(chan struct{}),
@@ -281,13 +282,14 @@ func SendQueryOpWithSession(ses *Session, sid, queryWithJSQ string, queryWithObj
 }
 
 // SendCountOpWithSession sends a query operation using an existing session id
-func SendCountOpWithSession(ses *Session, sid, queryWithJSQ string, queryWithObj *tables.Object, out interface{}) error {
+func SendCountOpWithSession(ses *Session, sid, bucket, queryWithJSQ string, queryWithObj *db.Object, out interface{}) error {
 	agent := ses.GetAgent(sid)
 	if agent == nil {
 		return fmt.Errorf("session not found")
 	}
 	if err := ses.SendOp(sid, &Op{
 		OpType:          OpCountObjects,
+		Bucket:          bucket,
 		QueryWithJSQ:    queryWithJSQ,
 		QueryWithObject: queryWithObj,
 		Done:            make(chan struct{}),
@@ -299,15 +301,16 @@ func SendCountOpWithSession(ses *Session, sid, queryWithJSQ string, queryWithObj
 }
 
 // SendPutOpWithSession sends a PUT operation using an existing session id
-func SendPutOpWithSession(ses *Session, sid string, data interface{}) error {
+func SendPutOpWithSession(ses *Session, sid string, bucket string, data []*db.Object) error {
 	agent := ses.GetAgent(sid)
 	if agent == nil {
 		return fmt.Errorf("session not found")
 	}
 	if err := ses.SendOp(sid, &Op{
-		OpType:  OpPutObjects,
-		PutData: data,
-		Done:    make(chan struct{}),
+		OpType:     OpPutObjects,
+		Bucket:     bucket,
+		PutObjects: data,
+		Done:       make(chan struct{}),
 	}); err != nil {
 		return err
 	}

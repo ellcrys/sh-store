@@ -2,49 +2,51 @@ package servers
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	"net"
-
+	"github.com/asaskevich/govalidator"
+	"github.com/ellcrys/elldb/servers/common"
+	"github.com/ellcrys/elldb/servers/proto_rpc"
+	"github.com/ellcrys/elldb/session"
 	"github.com/ellcrys/util"
-	"github.com/ellcrys/safehold/servers/common"
-	"github.com/ellcrys/safehold/servers/proto_rpc"
-	"github.com/ellcrys/safehold/session"
 	"golang.org/x/net/context"
 )
 
-// CreateDBSession creates a new session and returns the session ID
-func (s *RPC) CreateDBSession(ctx context.Context, req *proto_rpc.DBSession) (*proto_rpc.DBSession, error) {
+// CreateSession creates a new session and returns the session ID
+func (s *RPC) CreateSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
 	developerID := ctx.Value(CtxIdentity).(string)
 
-	sessionID := util.UUID4()
-	sessionID, err := s.dbSession.CreateSession(sessionID, developerID)
+	if !govalidator.IsNull(req.ID) && !govalidator.IsUUIDv4(req.ID) {
+		return nil, common.NewSingleAPIErr(400, "", "", "id is invalid. Expected UUIDv4 value", nil)
+	}
+
+	sessionID, err := s.dbSession.CreateSession(util.UUID4(), developerID)
 	if err != nil {
-		logRPC.Error("%+v", err)
+		logRPC.Errorf("%+v", err)
 		return nil, common.NewSingleAPIErr(500, "", "", "session not created", nil)
 	}
 
-	return &proto_rpc.DBSession{
+	return &proto_rpc.Session{
 		ID: sessionID,
 	}, nil
 }
 
-// GetDBSession gets a database session.
-func (s *RPC) GetDBSession(ctx context.Context, req *proto_rpc.DBSession) (*proto_rpc.DBSession, error) {
-	developerID := ctx.Value(CtxIdentity).(string)
+// GetSession gets a database session.
+func (s *RPC) GetSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
 	if req.ID == "" {
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
 	}
 
-	sessionID := req.ID
+	developerID := ctx.Value(CtxIdentity).(string)
 
 	// check if session exists locally
-	if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
+	if sessionAgent := s.dbSession.GetAgent(req.ID); sessionAgent != nil {
 
 		// check if session is owned by the developer, if not, return permission error
 		if sessionAgent.OwnerID != developerID {
@@ -55,7 +57,7 @@ func (s *RPC) GetDBSession(ctx context.Context, req *proto_rpc.DBSession) (*prot
 	}
 
 	// check session registry
-	regItem, err := s.sessionReg.Get(sessionID)
+	regItem, err := s.sessionReg.Get(req.ID)
 	if err != nil {
 		if err == session.ErrNotFound {
 			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
@@ -70,12 +72,12 @@ func (s *RPC) GetDBSession(ctx context.Context, req *proto_rpc.DBSession) (*prot
 	return req, nil
 }
 
-// DeleteDBSession deletes a existing database session
-func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*proto_rpc.DBSession, error) {
+// DeleteSession deletes a existing database session
+func (s *RPC) DeleteSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
 	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
+	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	if req.ID == "" {
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
@@ -95,8 +97,8 @@ func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 		return req, nil
 	}
 
-	// if localOnly is true, return error
-	if localOnly {
+	// if checkLocalOnly is true, return error
+	if checkLocalOnly {
 		return nil, fmt.Errorf("session not found")
 	}
 
@@ -125,11 +127,11 @@ func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 
 	// make call to the session host server.
 	// include the auth token of the current request
-	// and set local-only to force the RPC method
+	// and set check-local-only to force the RPC method
 	// to only check local/in-memory session cache
 	server := proto_rpc.NewAPIClient(client)
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", authorization, "local-only", "true"))
-	resp, err := server.DeleteDBSession(ctx, req)
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", authorization, "check-local-only", "true"))
+	resp, err := server.DeleteSession(ctx, req)
 	if err != nil {
 		if grpc.ErrorDesc(err) == "session not found" {
 			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
@@ -143,11 +145,11 @@ func (s *RPC) DeleteDBSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 
 // CommitSession commits an active session. Returns no error if the session was successfully
 // committed, or has already been committed or does not exist.
-func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.DBSession) (*proto_rpc.DBSession, error) {
+func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
 	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
+	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	if req.ID == "" {
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
@@ -167,8 +169,8 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.DBSession) (*pro
 		return req, nil
 	}
 
-	// if localOnly is true, return error
-	if localOnly {
+	// if checkLocalOnly is true, return error
+	if checkLocalOnly {
 		return nil, fmt.Errorf("session not found")
 	}
 
@@ -197,10 +199,10 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.DBSession) (*pro
 
 	// make call to the session host server.
 	// include the auth token of the current request
-	// and set local-only to force the RPC method
+	// and set check-local-only to force the RPC method
 	// to only check local/in-memory session cache
 	server := proto_rpc.NewAPIClient(client)
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", authorization, "local-only", "true"))
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", authorization, "check-local-only", "true"))
 	resp, err := server.CommitSession(ctx, req)
 	if err != nil {
 		if grpc.ErrorDesc(err) == "session not found" {
@@ -215,11 +217,11 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.DBSession) (*pro
 
 // RollbackSession rolls back a session. Returns no error if the session was successfully
 // rolled back, or has already been rolled back or does not exist.
-func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.DBSession) (*proto_rpc.DBSession, error) {
+func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
 	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	localOnly := util.FromIncomingMD(ctx, "local-only") == "true"
+	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	if req.ID == "" {
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
@@ -239,8 +241,8 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 		return req, nil
 	}
 
-	// if localOnly is true, return error
-	if localOnly {
+	// if checkLocalOnly is true, return error
+	if checkLocalOnly {
 		return nil, fmt.Errorf("session not found")
 	}
 
@@ -269,10 +271,10 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.DBSession) (*p
 
 	// make call to the session host server.
 	// include the auth token of the current request
-	// and set local-only to force the RPC method
+	// and set check-local-only to force the RPC method
 	// to only check local/in-memory session cache
 	server := proto_rpc.NewAPIClient(client)
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", authorization, "local-only", "true"))
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", authorization, "check-local-only", "true"))
 	resp, err := server.RollbackSession(ctx, req)
 	if err != nil {
 		if grpc.ErrorDesc(err) == "session not found" {

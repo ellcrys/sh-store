@@ -6,10 +6,9 @@ import (
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
-	"github.com/ellcrys/patchain"
-	"github.com/ellcrys/patchain/cockroach/tables"
-	"github.com/ellcrys/patchain/object"
-	"github.com/ellcrys/safehold/servers/common"
+	"github.com/ellcrys/elldb/servers/common"
+	"github.com/ellcrys/elldb/servers/db"
+	"github.com/jinzhu/gorm"
 )
 
 var (
@@ -39,15 +38,13 @@ func MakeToken(secret string, claims map[string]interface{}) (string, error) {
 
 // OAuth implements all the OAuth2 requirements of the application
 type OAuth struct {
-	db  patchain.DB
-	obj *object.Object
+	db *gorm.DB
 }
 
 // NewOAuth creates a new OAuth instance
-func NewOAuth(db patchain.DB) *OAuth {
+func NewOAuth(db *gorm.DB) *OAuth {
 	return &OAuth{
-		db:  db,
-		obj: object.NewObject(db),
+		db: db,
 	}
 }
 
@@ -69,6 +66,7 @@ func (o *OAuth) GetToken(w http.ResponseWriter, r *http.Request) (interface{}, i
 // getAppToken process a token request using the `client_credentials` grant type
 // and returns an app token that never expires.
 func (o *OAuth) getAppToken(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+
 	var clientID = r.URL.Query().Get("client_id")
 	var clientSecret = r.URL.Query().Get("client_secret")
 
@@ -80,26 +78,24 @@ func (o *OAuth) getAppToken(w http.ResponseWriter, r *http.Request) (interface{}
 	}
 
 	// get the identity
-	client, err := o.obj.GetLast(&tables.Object{
-		QueryParams: patchain.KeyStartsWith(object.IdentityPrefix),
-		Ref1:        clientID,
-	})
+	var identity db.Identity
+	err := o.db.Where("client_id = ?", clientID).First(&identity).Error
 	if err != nil {
-		if err == patchain.ErrNotFound {
+		if err == gorm.ErrRecordNotFound {
 			return common.NewSingleAPIErr(400, common.CodeInvalidParam, "", "Client id or secret are invalid", nil), 401
 		}
-		return common.ServerError, 400
+		return common.ServerError, 500
 	}
 
 	// check client secret
-	if client.Ref2 != clientSecret {
+	if identity.ClientSecret != clientSecret {
 		return common.NewSingleAPIErr(400, common.CodeInvalidParam, "", "Client id or secret are invalid", nil), 401
 	}
 
 	token, _ := MakeToken(SigningSecret, map[string]interface{}{
 		"id":   clientID,
 		"type": TokenTypeApp,
-		"iat":  time.Now().Unix(),
+		"iat":  time.Now().UnixNano(),
 	})
 
 	return map[string]string{

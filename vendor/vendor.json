@@ -103,17 +103,17 @@
 			"revisionTime": "2017-06-20T17:41:03Z"
 		},
 		{
-			"checksumSHA1": "93+UPu/6jKgR/LbuRBtIP50dCpk=",
+			"checksumSHA1": "HRX9rssGPEvIRcVYLdwF1naCC2c=",
 			"path": "github.com/ellcrys/util",
-			"revision": "67e42c65a5cba34ecfb54604c08b77dc1329a359",
-			"revisionTime": "2017-06-01T07:41:11Z"
+			"revision": "de927b231ec15c773192e8406496a87642fe8027",
+			"revisionTime": "2017-07-14T16:44:09Z"
 		},
 		{
-			"checksumSHA1": "16fWSep+3jUx8wADdbiTxSHjW14=",
+			"checksumSHA1": "x77xUarDfVxctJMAJPCQzlYk8JM=",
 			"origin": "github.com/ellcrys/cocoon/vendor/github.com/fatih/color",
 			"path": "github.com/fatih/color",
-			"revision": "6e4411265249308dcf52ab15c3eb62d5d9d858f8",
-			"revisionTime": "2017-06-20T15:15:29Z"
+			"revision": "4f59d0b1262a6c8dba6648a0698b63e8d07f3b25",
+			"revisionTime": "2017-07-04T12:29:37Z"
 		},
 		{
 			"checksumSHA1": "/rTYnixxZiY35IM5tGJzyhf4al8=",
@@ -760,5 +760,5 @@
 			"revisionTime": "2017-02-08T14:18:51Z"
 		}
 	],
-	"rootPath": "github.com/ellcrys/safehold"
+	"rootPath": "github.com/ellcrys/elldb"
 }

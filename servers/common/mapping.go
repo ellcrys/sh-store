@@ -56,7 +56,7 @@ func MapFields(mapping map[string]string, unmappedObj interface{}) error {
 			MapFields(mapping, m)
 		}
 	default:
-		return fmt.Errorf("invalid mappedObj type. Expects a map or slice of map")
+		return fmt.Errorf("invalid mappedObj type. Expected a map or slice of map")
 	}
 	return nil
 }
