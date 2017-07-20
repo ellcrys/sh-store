@@ -86,6 +86,10 @@ func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 		startedCB(s)
 	})
 
+	return s.serve(lis)
+}
+
+func (s *RPC) serve(lis net.Listener) error {
 	s.server = grpc.NewServer(grpc.UnaryInterceptor(s.Interceptors()))
 	proto_rpc.RegisterAPIServer(s.server, s)
 	return s.server.Serve(lis)

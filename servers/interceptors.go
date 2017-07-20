@@ -68,7 +68,7 @@ func (s *RPC) authInterceptor(ctx context.Context, req interface{}, info *grpc.U
 
 	tokenStr, err := util.GetAuthToken(ctx, "bearer")
 	if err != nil {
-		return nil, common.NewSingleAPIErr(400, common.CodeAuthorizationError, "", err.Error(), nil)
+		return nil, common.NewSingleAPIErr(401, common.CodeAuthorizationError, "", err.Error(), nil)
 	}
 
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
@@ -86,12 +86,12 @@ func (s *RPC) authInterceptor(ctx context.Context, req interface{}, info *grpc.U
 	})
 	if err != nil {
 		logRPC.Debugf("%+v", err)
-		return nil, common.NewSingleAPIErr(400, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
+		return nil, common.NewSingleAPIErr(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
 	}
 
 	claims := token.Claims.(jwt.MapClaims)
 	if err = claims.Valid(); err != nil {
-		return nil, common.NewSingleAPIErr(400, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
+		return nil, common.NewSingleAPIErr(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
 	}
 
 	ctx = context.WithValue(ctx, CtxTokenClaims, claims)

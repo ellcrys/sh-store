@@ -95,7 +95,7 @@ func (o *OAuth) getAppToken(w http.ResponseWriter, r *http.Request) (interface{}
 	token, _ := MakeToken(SigningSecret, map[string]interface{}{
 		"id":   clientID,
 		"type": TokenTypeApp,
-		"iat":  time.Now().UnixNano(),
+		"iat":  time.Now().Unix(),
 	})
 
 	return map[string]string{

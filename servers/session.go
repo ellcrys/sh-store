@@ -151,7 +151,6 @@ func (s *RPC) DeleteSession(ctx context.Context, req *proto_rpc.Session) (*proto
 // committed, or has already been committed or does not exist.
 func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
-	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
@@ -159,6 +158,7 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.Session) (*proto
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
 	}
 
+	developerID := ctx.Value(CtxIdentity).(string)
 	sessionID := req.ID
 
 	// check if session exists locally, if so, authenticate developer and commit immediately
@@ -223,7 +223,6 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.Session) (*proto
 // rolled back, or has already been rolled back or does not exist.
 func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
-	developerID := ctx.Value(CtxIdentity).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
@@ -231,6 +230,7 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.Session) (*pro
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
 	}
 
+	developerID := ctx.Value(CtxIdentity).(string)
 	sessionID := req.ID
 
 	// check if session exists locally, if so, authenticate developer and rollback immediately

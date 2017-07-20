@@ -132,8 +132,8 @@ func (s *Session) Stop() {
 	}
 }
 
-// removeAgent an agent reference
-func (s *Session) removeAgent(id string) {
+// RemoveAgent an agent reference
+func (s *Session) RemoveAgent(id string) {
 	s.Lock()
 	defer s.Unlock()
 	delete(s.agents, id)
@@ -143,7 +143,7 @@ func (s *Session) removeAgent(id string) {
 func (s *Session) End(id string) {
 	if s.HasSession(id) {
 		s.GetAgent(id).Agent.Stop()
-		s.removeAgent(id)
+		s.RemoveAgent(id)
 		s.sessionReg.Del(id) // delete from session registry
 	}
 }
