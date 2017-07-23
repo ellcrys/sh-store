@@ -96,3 +96,15 @@ func (s *RPC) GetAllMapping(ctx context.Context, req *proto_rpc.GetAllMappingMsg
 		Mappings: util.MustStringify(mappings),
 	}, nil
 }
+
+// getMapping returns a mapping or common.APIError
+func (s *RPC) getMapping(name, identity string) (*db.Mapping, error) {
+	var m db.Mapping
+	if err := s.db.Where("name = ? AND identity = ?", name, identity).First(&m).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, common.NewSingleAPIErr(404, common.CodeInvalidParam, "mapping", "mapping not found", nil)
+		}
+		return nil, common.ServerError
+	}
+	return &m, nil
+}

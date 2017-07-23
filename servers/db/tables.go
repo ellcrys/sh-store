@@ -66,6 +66,7 @@ type Object struct {
 	Key         string      `json:"key,omitempty" structs:"key,omitempty" mapstructure:"key,omitempty" gorm:"type:varchar(64);index:idx_key"`
 	Value       string      `json:"value,omitempty" structs:"value,omitempty" mapstructure:"value,omitempty" gorm:"type:varchar(64000);index:idx_value"`
 	CreatedAt   int64       `json:"created_at,omitempty" structs:"created_at,omitempty" mapstructure:"created_at,omitempty" gorm:"index:idx_created_at"`
+	UpdatedAt   int64       `json:"updated_at,omitempty" structs:"updated_at,omitempty" mapstructure:"updated_at,omitempty" gorm:"index:idx_created_at"`
 	Ref1        string      `json:"ref1,omitempty" structs:"ref1,omitempty" mapstructure:"ref1,omitempty" gorm:"type:varchar(64);index:idx_ref1"`
 	Ref2        string      `json:"ref2,omitempty" structs:"ref2,omitempty" mapstructure:"ref2,omitempty" gorm:"type:varchar(64);index:idx_ref2"`
 	Ref3        string      `json:"ref3,omitempty" structs:"ref3,omitempty" mapstructure:"ref3,omitempty" gorm:"type:varchar(64);index:idx_ref3"`
@@ -81,7 +82,7 @@ type Object struct {
 
 // NewObject creates a new object. An ID is assigned.
 func NewObject() *Object {
-	return &Object{ID: util.UUID4(), CreatedAt: time.Now().UnixNano()}
+	return &Object{ID: util.UUID4(), CreatedAt: time.Now().UnixNano(), UpdatedAt: time.Now().UnixNano()}
 }
 
 // Query represents an object for querying objects

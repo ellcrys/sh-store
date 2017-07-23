@@ -7,6 +7,7 @@ import (
 
 	"sync"
 
+	"github.com/asaskevich/govalidator"
 	"github.com/ellcrys/elldb/servers/db"
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/gorm"
@@ -120,14 +121,7 @@ func (s *Session) SendOp(id string, op *Op) error {
 
 // Stop all active sessions
 func (s *Session) Stop() {
-	if s.db != nil {
-		s.db.Close()
-	}
-
-	s.Lock()
-	defer s.Unlock()
-	for sid, agentInfo := range s.agents {
-		agentInfo.Agent.Stop()
+	for sid := range s.agents {
 		s.End(sid)
 	}
 }
@@ -185,7 +179,7 @@ func (s *Session) CreateSession(id, identityID string) (string, error) {
 	return s.createSession(id, identityID, true)
 }
 
-// CreateUnregisteredSession creates a session that is not registered
+// CreateUnregisteredSession creates a session that is not registered on the session registry
 func (s *Session) CreateUnregisteredSession(id, identityID string) (sid string) {
 	sid, _ = s.createSession(id, identityID, false)
 	return
@@ -195,6 +189,10 @@ func (s *Session) CreateUnregisteredSession(id, identityID string) (sid string) 
 // id param is not empty and will only register the session on the registry
 // if registered is true.
 func (s *Session) createSession(id, identityID string, registered bool) (string, error) {
+
+	if len(id) > 0 && !govalidator.IsUUIDv4(id) {
+		return "", fmt.Errorf("id is invalid. Expected a UUIDv4 value")
+	}
 
 	if id == "" {
 		id = util.UUID4()
@@ -218,7 +216,7 @@ func (s *Session) createSession(id, identityID string, registered bool) (string,
 	if registered {
 		if err := s.registerSession(id, identityID); err != nil {
 			s.End(id)
-			return "", fmt.Errorf("failed to register session")
+			return "", fmt.Errorf("failed to register session. %s", err)
 		}
 	}
 
@@ -315,4 +313,24 @@ func SendPutOpWithSession(ses *Session, sid string, bucket string, data []*db.Ob
 		return err
 	}
 	return nil
+}
+
+// SendUpdateOpWithSession sends a UPDATE operation using an existing session id
+func SendUpdateOpWithSession(ses *Session, sid string, queryWithJSQ string, queryWithObj *db.Object, update interface{}) (int64, error) {
+	agent := ses.GetAgent(sid)
+	if agent == nil {
+		return 0, fmt.Errorf("session not found")
+	}
+	op := &Op{
+		OpType:          OpUpdateObjects,
+		QueryWithJSQ:    queryWithJSQ,
+		QueryWithObject: queryWithObj,
+		UpdateObject:    update,
+		Done:            make(chan struct{}),
+	}
+	if err := ses.SendOp(sid, op); err != nil {
+		return 0, err
+	}
+
+	return op.NumAffectedObjects, nil
 }

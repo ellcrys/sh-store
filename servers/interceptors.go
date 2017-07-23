@@ -48,6 +48,7 @@ var (
 		"/proto_rpc.API/GetAllMapping",
 		"/proto_rpc.API/CommitSession",
 		"/proto_rpc.API/RollbackSession",
+		"/proto_rpc.API/UpdateObjects",
 	}
 )
 
@@ -113,7 +114,7 @@ func (s *RPC) requiresAppTokenInterceptor(ctx context.Context, req interface{}, 
 
 	claims := ctx.Value(CtxTokenClaims).(jwt.MapClaims)
 	if claims["type"] != oauth.TokenTypeApp {
-		return nil, common.NewSingleAPIErr(400, "", "", "endpoint requires an app token", nil)
+		return nil, common.NewSingleAPIErr(401, "", "", "endpoint requires an app token", nil)
 	}
 
 	ctx, err = s.processAppTokenClaims(ctx, claims)
@@ -132,7 +133,7 @@ func (s *RPC) processAppTokenClaims(ctx context.Context, claims jwt.MapClaims) (
 	var identity db.Identity
 	if err := s.db.Where("client_id = ?", claims["id"].(string)).First(&identity).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return ctx, common.NewSingleAPIErr(400, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
+			return ctx, common.NewSingleAPIErr(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
 		}
 		logRPC.Errorf("%+v", err)
 		return nil, common.ServerError

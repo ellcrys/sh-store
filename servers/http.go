@@ -52,6 +52,9 @@ func (s *HTTP) getRouter() *mux.Router {
 	g.HandleFunc("/buckets", common.EasyHandle(http.MethodPost, s.createBucket))
 	g.HandleFunc("/identities", common.EasyHandle(http.MethodPost, s.createIdentity))
 	g.HandleFunc("/buckets/{bucket}/objects", common.EasyHandle(http.MethodPost, s.createObjects)).Methods(http.MethodPost)
+	g.HandleFunc("/buckets/{bucket}/objects/query", common.EasyHandle(http.MethodPost, s.getObjects)).Methods(http.MethodPost)
+	g.HandleFunc("/buckets/{bucket}/objects/count", common.EasyHandle(http.MethodPost, s.countObjects)).Methods(http.MethodPost)
+	g.HandleFunc("/buckets/{bucket}/objects/update", common.EasyHandle(http.MethodPost, s.updateObjects)).Methods(http.MethodPost)
 	g.HandleFunc("/identities/{id}", common.EasyHandle(http.MethodGet, s.getIdentity))
 	g.HandleFunc("/mappings", common.EasyHandle(http.MethodPost, s.createMapping)).Methods(http.MethodPost)
 	g.HandleFunc("/mappings", common.EasyHandle(http.MethodGet, s.getAllMapping)).Methods(http.MethodGet)
@@ -61,8 +64,6 @@ func (s *HTTP) getRouter() *mux.Router {
 	g.HandleFunc("/sessions/{id}", common.EasyHandle(http.MethodDelete, s.deleteSession)).Methods(http.MethodDelete)
 	g.HandleFunc("/sessions/{id}/commit", common.EasyHandle(http.MethodGet, s.commitSession)).Methods(http.MethodGet)
 	g.HandleFunc("/sessions/{id}/rollback", common.EasyHandle(http.MethodGet, s.rollbackSession)).Methods(http.MethodGet)
-	g.HandleFunc("/objects/query", common.EasyHandle(http.MethodPost, s.getObjects)).Methods(http.MethodPost)
-	g.HandleFunc("/objects/count", common.EasyHandle(http.MethodPost, s.countObjects)).Methods(http.MethodPost)
 
 	return r
 }
@@ -416,7 +417,47 @@ func (s *HTTP) createObjects(w http.ResponseWriter, r *http.Request) (interface{
 	return common.MultiObjectResp("objects", objects), 201
 }
 
-// getObjects performs query operations
+// updateObjects updates objects of a mutable bucket
+func (s *HTTP) updateObjects(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+	var err error
+	var resp *proto_rpc.AffectedResponse
+	var body struct {
+		Query   map[string]interface{} `json:"query"`
+		Owner   string                 `json:"owner"`
+		Creator string                 `json:"creator"`
+		Update  map[string]interface{} `json:"update"`
+	}
+	var md = metadata.Join(
+		metadata.Pairs("session_id", r.URL.Query().Get("session")),
+		metadata.Pairs("authorization", r.Header.Get("Authorization")),
+	)
+
+	if err = util.DecodeJSON(r.Body, &body); err != nil {
+		return common.BodyMalformedError, 400
+	}
+
+	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
+		ctx := metadata.NewContext(context.Background(), md)
+		resp, err = client.UpdateObjects(ctx, &proto_rpc.UpdateObjectsMsg{
+			Bucket:  mux.Vars(r)["bucket"],
+			Query:   util.MustStringify(body.Query),
+			Owner:   body.Owner,
+			Creator: body.Creator,
+			Update:  util.MustStringify(body.Update),
+			Mapping: r.URL.Query().Get("mapping"),
+		})
+		return err
+	}); err != nil {
+		log.Errorf("%+v", err)
+		return err, 0
+	}
+
+	return map[string]interface{}{
+		"affected": resp.Affected,
+	}, 200
+}
+
+// getObjects fetches objects
 func (s *HTTP) getObjects(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
 	var resp *proto_rpc.GetObjectsResponse
@@ -425,7 +466,6 @@ func (s *HTTP) getObjects(w http.ResponseWriter, r *http.Request) (interface{}, 
 	var sessionID = r.URL.Query().Get("session")
 	var md = metadata.Join(metadata.Pairs("session_id", sessionID), metadata.Pairs("authorization", r.Header.Get("Authorization")))
 	var body struct {
-		Bucket  string                 `json:"bucket"`
 		Query   map[string]interface{} `json:"query"`
 		Owner   string                 `json:"owner"`
 		Creator string                 `json:"creator"`
@@ -442,6 +482,7 @@ func (s *HTTP) getObjects(w http.ResponseWriter, r *http.Request) (interface{}, 
 
 	copier.Copy(&rpcBody, body)
 	rpcBody.Query = util.MustStringify(body.Query)
+	rpcBody.Bucket = mux.Vars(r)["bucket"]
 	rpcBody.Mapping = mappingName
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
@@ -467,7 +508,6 @@ func (s *HTTP) countObjects(w http.ResponseWriter, r *http.Request) (interface{}
 	var sessionID = r.URL.Query().Get("session")
 	var md = metadata.Join(metadata.Pairs("session_id", sessionID), metadata.Pairs("authorization", r.Header.Get("Authorization")))
 	var body struct {
-		Bucket  string                 `json:"bucket"`
 		Query   map[string]interface{} `json:"query"`
 		Owner   string                 `json:"owner"`
 		Creator string                 `json:"creator"`
@@ -478,6 +518,7 @@ func (s *HTTP) countObjects(w http.ResponseWriter, r *http.Request) (interface{}
 	}
 
 	copier.Copy(&rpcBody, body)
+	rpcBody.Bucket = mux.Vars(r)["bucket"]
 	rpcBody.Query = util.MustStringify(body.Query)
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {

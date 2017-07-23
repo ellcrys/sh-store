@@ -81,3 +81,15 @@ func (s *RPC) GetIdentity(ctx context.Context, req *proto_rpc.GetIdentityMsg) (*
 		Object: util.MustStringify(identity),
 	}, nil
 }
+
+// getIdentity returns an identity or common.APIError if not found
+func (s *RPC) getIdentity(id string) (*db.Identity, error) {
+	var m db.Identity
+	if err := s.db.Where("id = ?", id).First(&m).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, common.NewSingleAPIErr(404, common.CodeInvalidParam, "identity", "identity not found", nil)
+		}
+		return nil, common.ServerError
+	}
+	return &m, nil
+}

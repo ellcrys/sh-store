@@ -45,9 +45,11 @@ func CreateObjects(db *gorm.DB, bucket string, objs []*Object) error {
 		return err
 	}
 
-	// assign id, bucket to objects and create the object
+	// assign id (if not assigned), bucket to objects and create the object
 	for i, o := range objs {
-		o.ID = util.UUID4()
+		if len(o.ID) == 0 {
+			o.ID = util.UUID4()
+		}
 		o.Bucket = b.Name
 		if err := db.Create(o).Error; err != nil {
 			return fmt.Errorf("object %d: %s", i, err)
@@ -94,4 +96,21 @@ func CountObjects(db *gorm.DB, q Query, out interface{}) error {
 	}
 
 	return db.Count(out).Error
+}
+
+// UpdateObjects updates an object match the query
+func UpdateObjects(db *gorm.DB, q Query, update interface{}) (int64, error) {
+
+	qp := q.GetQueryParams()
+	db = db.Model(Object{})
+
+	// no custom expression, use full object
+	if qp == nil || len(qp.Expr.Expr) == 0 {
+		db = db.Where(q)
+	} else { // use expression and arguments
+		db = db.Where(qp.Expr.Expr, qp.Expr.Args...)
+	}
+
+	r := db.UpdateColumns(update)
+	return r.RowsAffected, r.Error
 }

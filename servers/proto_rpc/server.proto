@@ -13,6 +13,7 @@ service API {
     rpc RollbackSession(Session) returns (Session);
     rpc GetObjects(GetObjectMsg) returns (GetObjectsResponse);
     rpc CountObjects(GetObjectMsg) returns (ObjectCountResponse);
+    rpc UpdateObjects(UpdateObjectsMsg) returns (AffectedResponse);
     rpc GetIdentity(GetIdentityMsg) returns (GetObjectResponse);
     rpc CreateMapping(CreateMappingMsg) returns (CreateMappingResponse);
     rpc GetMapping(GetMappingMsg) returns (GetMappingResponse);
@@ -88,6 +89,21 @@ message GetObjectMsg {
     string mapping = 7               [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
 }
 
+// UpdateObjectsMsg represents parameters for updating objects
+message UpdateObjectsMsg {
+    string bucket = 1               [(gogoproto.jsontag) = "bucket,omitempty", (gogoproto.moretags) = 'structs:"bucket,omitempty" mapstructure:"bucket,omitempty"'];
+    bytes query = 2                 [(gogoproto.jsontag) = "query,omitempty", (gogoproto.moretags) = 'structs:"query,omitempty" mapstructure:"query,omitempty"'];
+    string owner = 3                [(gogoproto.jsontag) = "owner,omitempty", (gogoproto.moretags) = 'structs:"owner,omitempty" mapstructure:"owner,omitempty"'];
+    string creator = 4              [(gogoproto.jsontag) = "creator,omitempty", (gogoproto.moretags) = 'structs:"creator,omitempty" mapstructure:"creator,omitempty"'];
+    bytes update = 5               [(gogoproto.jsontag) = "update,omitempty", (gogoproto.moretags) = 'structs:"update,omitempty" mapstructure:"update,omitempty"'];
+    string mapping = 6              [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
+}
+
+// AffectedResponse 
+message AffectedResponse {
+    int64 affected  = 1              [(gogoproto.jsontag) = "bucket,omitempty", (gogoproto.moretags) = 'structs:"bucket,omitempty" mapstructure:"bucket,omitempty"'];    
+}
+
 // OrderBy represents how a field is ordered in a query
 message OrderBy {
     string field = 1        [(gogoproto.jsontag) = "field,omitempty", (gogoproto.moretags) = 'structs:"field,omitempty" mapstructure:"field,omitempty"'];
@@ -124,14 +140,13 @@ message CreateIdentityMsg {
     string clientSecret = 7     [(gogoproto.jsontag) = "client_secret,omitempty", (gogoproto.moretags) = 'structs:"client_secret,omitempty" mapstructure:"client_secret,omitempty"'];
 }
 
-// GetObjectResponse describes a response of multiple objects
+// GetObjectResponse describes a response of single object
 message GetObjectResponse {
     bytes object  = 1             [(gogoproto.jsontag) = "data,omitempty", (gogoproto.moretags) = 'structs:"data,omitempty" mapstructure:"data,omitempty"'];
 }
 
 // GetObjectsResponse describes a response of multiple objects
 message GetObjectsResponse {
-    // Must contain list of maps [{...},{...}]
     bytes objects  = 1             [(gogoproto.jsontag) = "data,omitempty", (gogoproto.moretags) = 'structs:"data,omitempty" mapstructure:"data,omitempty"'];
 }
 

@@ -44,11 +44,9 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	}
 
 	// check if bucket exists
-	if err = s.db.Where("name = ? AND identity = ?", req.Bucket, developerID).First(&db.Bucket{}).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, common.NewSingleAPIErr(404, "", "bucket", "bucket not found", nil)
-		}
-		return nil, common.ServerError
+	_, err = s.getBucket(req.Bucket, developerID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Handle session
@@ -61,41 +59,19 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 				return nil, fmt.Errorf("session not found")
 			}
 
-			// find session in the registry
-			sessionItem, err := s.sessionReg.Get(sessionID)
-			if err != nil {
-				if err == session.ErrNotFound {
-					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			var resp *proto_rpc.GetObjectsResponse
+			err = s.getRemoteConnection(ctx, developerID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
+				resp, err = remote.CreateObjects(ctx, req)
+				if err != nil {
+					if grpc.ErrorDesc(err) == "session not found" {
+						return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+					}
+					return common.ServerError
 				}
-				return nil, common.ServerError
-			}
+				return nil
+			})
 
-			// check if session is owned by the developer, if not, return permission error
-			if sessionItem.Meta["identity"] != developerID {
-				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
-			}
-
-			sessionHostAddr := net.JoinHostPort(sessionItem.Address, strconv.Itoa(sessionItem.Port))
-			client, err := grpc.Dial(sessionHostAddr, grpc.WithInsecure())
-			if err != nil {
-				return nil, common.ServerError
-			}
-			defer client.Close()
-
-			// make call to the session host. Include the session_id, auth token of the current request
-			// and set check-local-only to force the RPC method to only perform local object creation
-			server := proto_rpc.NewAPIClient(client)
-			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "check-local-only", "true"))
-			resp, err := server.CreateObjects(ctx, req)
-			if err != nil {
-				if grpc.ErrorDesc(err) == "session not found" {
-					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
-				}
-				logRPC.Errorf("%+v", err)
-				return nil, common.ServerError
-			}
-
-			return resp, nil
+			return resp, err
 		}
 
 		// check if session is owned by the developer, if not, return permission error
@@ -240,6 +216,12 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
 	}
 
+	// check if bucket exists
+	_, err = s.getBucket(req.Bucket, developerID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Handle session if provided
 	if len(sessionID) > 0 {
 
@@ -252,43 +234,20 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 				return nil, fmt.Errorf("session not found")
 			}
 
-			// find session in the registry
-			sessionItem, err := s.sessionReg.Get(sessionID)
-			if err != nil {
-				if err == session.ErrNotFound {
-					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			var err error
+			var resp *proto_rpc.GetObjectsResponse
+			err = s.getRemoteConnection(ctx, developerID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
+				resp, err = remote.GetObjects(ctx, req)
+				if err != nil {
+					if grpc.ErrorDesc(err) == "session not found" {
+						return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+					}
+					return common.ServerError
 				}
-				return nil, common.ServerError
-			}
+				return nil
+			})
 
-			// check if session is owned by the developer, if not, return permission error
-			if sessionItem.Meta["identity"] != developerID {
-				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
-			}
-
-			sessionHostAddr := net.JoinHostPort(sessionItem.Address, strconv.Itoa(sessionItem.Port))
-			client, err := grpc.Dial(sessionHostAddr, grpc.WithInsecure())
-			if err != nil {
-				return nil, common.ServerError
-			}
-			defer client.Close()
-
-			// make call to the session host server.
-			// include the session_id, auth token of the current request
-			// and set check-local-only to force the RPC method
-			// to only perform local object creation
-			server := proto_rpc.NewAPIClient(client)
-			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "check-local-only", "true"))
-			resp, err := server.GetObjects(ctx, req)
-			if err != nil {
-				if grpc.ErrorDesc(err) == "session not found" {
-					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
-				}
-				logRPC.Errorf("%+v", err)
-				return nil, common.ServerError
-			}
-
-			return resp, nil
+			return resp, err
 		}
 
 		// check if session is owned by the developer, if not, return permission error
@@ -304,14 +263,26 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 		defer s.dbSession.CommitEnd(sessionID)
 	}
 
-	// set default owner as the developer if not set
+	// set owner as the developer if not set
 	if len(req.Owner) == 0 {
 		req.Owner = developerID
+	} else {
+		if _, err = s.getIdentity(req.Owner); err != nil {
+			if strings.Contains(err.Error(), "identity not found") {
+				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
+			}
+		}
 	}
 
-	// set default creator as the developer if not set
+	// set creator as the developer if not set
 	if len(req.Creator) == 0 {
 		req.Creator = developerID
+	} else {
+		if _, err = s.getIdentity(req.Creator); err != nil {
+			if strings.Contains(err.Error(), "identity not found") {
+				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
+			}
+		}
 	}
 
 	// developer is not the owner, this action requires permission
@@ -332,12 +303,9 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 	// if mapping is provided in request, fetch it
 	if len(req.Mapping) > 0 {
-		var m db.Mapping
-		if err := s.db.Where("name = ? AND identity = ?", req.Mapping, developerID).First(&m).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return nil, common.NewSingleAPIErr(404, common.CodeInvalidParam, "mapping", "mapping not found", nil)
-			}
-			return nil, common.ServerError
+		m, err := s.getMapping(req.Mapping, developerID)
+		if err != nil {
+			return nil, err
 		}
 		util.FromJSON([]byte(m.Mapping), &mapping)
 	}
@@ -367,13 +335,58 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	}, nil
 }
 
+// Create a remote RPC connection to the host of a session
+func (s *RPC) getRemoteConnection(ctx context.Context, developerID, authorization, sessionID string, cb func(ctx context.Context, remoteServer proto_rpc.APIClient) error) error {
+
+	// find session in the registry
+	sessionItem, err := s.sessionReg.Get(sessionID)
+	if err != nil {
+		if err == session.ErrNotFound {
+			return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+		}
+		return common.ServerError
+	}
+
+	// check if session is owned by the developer, if not, return permission error
+	if sessionItem.Meta["identity"] != developerID {
+		return common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+	}
+
+	sessionHostAddr := net.JoinHostPort(sessionItem.Address, strconv.Itoa(sessionItem.Port))
+	client, err := grpc.Dial(sessionHostAddr, grpc.WithInsecure())
+	if err != nil {
+		return common.ServerError
+	}
+	defer client.Close()
+
+	// make call to the session host server.
+	// include the session_id, auth token of the current request
+	// and set check-local-only to force the RPC method
+	// to only perform local object creation
+	server := proto_rpc.NewAPIClient(client)
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "check-local-only", "true"))
+	return cb(ctx, server)
+}
+
 // CountObjects counts the number of objects that match a query
 func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*proto_rpc.ObjectCountResponse, error) {
 
+	var err error
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	developerID := ctx.Value(CtxIdentity).(string)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
+
+	// bucket is required
+	if len(req.Bucket) == 0 {
+		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
+	}
+
+	// check if bucket exists
+	_, err = s.getBucket(req.Bucket, developerID)
+	if err != nil {
+		return nil, err
+	}
 
 	// check if session exist in the in-memory session cache,
 	// use it else check if it exist on the session registry. If it does,
@@ -385,43 +398,20 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 				return nil, fmt.Errorf("session not found")
 			}
 
-			// find session in the registry
-			sessionItem, err := s.sessionReg.Get(sessionID)
-			if err != nil {
-				if err == session.ErrNotFound {
-					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			var err error
+			var resp *proto_rpc.ObjectCountResponse
+			err = s.getRemoteConnection(ctx, developerID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
+				resp, err = remote.CountObjects(ctx, req)
+				if err != nil {
+					if grpc.ErrorDesc(err) == "session not found" {
+						return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+					}
+					return common.ServerError
 				}
-				return nil, common.ServerError
-			}
+				return nil
+			})
 
-			// check if session is owned by the developer, if not, return permission error
-			if sessionItem.Meta["identity"] != developerID {
-				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
-			}
-
-			sessionHostAddr := net.JoinHostPort(sessionItem.Address, strconv.Itoa(sessionItem.Port))
-			client, err := grpc.Dial(sessionHostAddr, grpc.WithInsecure())
-			if err != nil {
-				return nil, common.ServerError
-			}
-			defer client.Close()
-
-			// make call to the session host server.
-			// include the session_id, auth token of the current request
-			// and set check-local-only to force the RPC method
-			// to only perform local object creation
-			server := proto_rpc.NewAPIClient(client)
-			ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", authorization, "check-local-only", "true"))
-			resp, err := server.CountObjects(ctx, req)
-			if err != nil {
-				if grpc.ErrorDesc(err) == "session not found" {
-					return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
-				}
-				logRPC.Errorf("%+v", err)
-				return nil, common.ServerError
-			}
-
-			return resp, nil
+			return resp, err
 		}
 
 		// check if session is owned by the developer, if not, return permission error
@@ -437,12 +427,24 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 		defer s.dbSession.CommitEnd(sessionID)
 	}
 
-	// default owner and creator
 	if len(req.Owner) == 0 {
 		req.Owner = developerID
+	} else {
+		if _, err = s.getIdentity(req.Owner); err != nil {
+			if strings.Contains(err.Error(), "identity not found") {
+				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
+			}
+		}
 	}
+
 	if len(req.Creator) == 0 {
 		req.Creator = developerID
+	} else {
+		if _, err = s.getIdentity(req.Creator); err != nil {
+			if strings.Contains(err.Error(), "identity not found") {
+				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
+			}
+		}
 	}
 
 	// developer is not the owner, this action requires permission
@@ -467,5 +469,144 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 
 	return &proto_rpc.ObjectCountResponse{
 		Count: count,
+	}, nil
+}
+
+// UpdateObjects updates objects of a mutable bucket
+func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg) (*proto_rpc.AffectedResponse, error) {
+
+	var err error
+	authorization := util.FromIncomingMD(ctx, "authorization")
+	developerID := ctx.Value(CtxIdentity).(string)
+	sessionID := util.FromIncomingMD(ctx, "session_id")
+	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
+
+	// bucket is required
+	if len(req.Bucket) == 0 {
+		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
+	}
+
+	// check if bucket exists
+	bucket, err := s.getBucket(req.Bucket, developerID)
+	if err != nil {
+		return nil, err
+	}
+
+	// only mutable buckets can be updated
+	if bucket.Immutable {
+		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket is not mutable", nil)
+	}
+
+	// check if session exist in the in-memory session cache,
+	// use it else check if it exist on the session registry. If it does,
+	// forward the request to the associated host
+	if sessionID != "" {
+		if !s.dbSession.HasSession(sessionID) {
+
+			if checkLocalOnly {
+				return nil, fmt.Errorf("session not found")
+			}
+
+			var err error
+			var resp *proto_rpc.AffectedResponse
+			err = s.getRemoteConnection(ctx, developerID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
+				resp, err = remote.UpdateObjects(ctx, req)
+				if err != nil {
+					if grpc.ErrorDesc(err) == "session not found" {
+						return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+					}
+					return common.ServerError
+				}
+				return nil
+			})
+
+			return resp, err
+		}
+
+		// check if session is owned by the developer, if not, return permission error
+		if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
+			if sessionAgent.OwnerID != developerID {
+				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			}
+		}
+
+	} else {
+		sessionID = util.UUID4()
+		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		defer s.dbSession.CommitEnd(sessionID)
+	}
+
+	// set owner as the developer if not set
+	if len(req.Owner) == 0 {
+		req.Owner = developerID
+	} else {
+		if _, err = s.getIdentity(req.Owner); err != nil {
+			if strings.Contains(err.Error(), "identity not found") {
+				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
+			}
+		}
+	}
+
+	// set creator as the developer if not set
+	if len(req.Creator) == 0 {
+		req.Creator = developerID
+	} else {
+		if _, err = s.getIdentity(req.Creator); err != nil {
+			if strings.Contains(err.Error(), "identity not found") {
+				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
+			}
+		}
+	}
+
+	// developer is not the owner, this action requires permission
+	// TODO: ensure auth token must be a user token from the owner
+	// and the token authorizes access to the object created by the creator for this developer
+	if developerID != req.Owner {
+		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner", nil)
+	}
+
+	// include owner, creator and bucket filters
+	var query = make(map[string]interface{})
+	util.FromJSON(req.Query, &query)
+	query["owner_id"] = req.Owner
+	query["creator_id"] = req.Creator
+	query["bucket"] = req.Bucket
+
+	var mapping map[string]string
+
+	// if mapping is provided in request, fetch it
+	if len(req.Mapping) > 0 {
+		m, err := s.getMapping(req.Mapping, developerID)
+		if err != nil {
+			return nil, err
+		}
+		util.FromJSON([]byte(m.Mapping), &mapping)
+	}
+
+	var update map[string]interface{}
+	util.FromJSON(req.Update, &update)
+
+	// using the mapping, convert custom mapped fields of
+	// query and update to their original object column names
+	common.UnMapFields(mapping, query)
+	common.UnMapFields(mapping, update)
+
+	// remove fields that cannot be updated
+	var blacklistFields = []string{"id", "sn", "bucket", "creator_id", "owner_id", "created_at", "updated_at"}
+	for _, f := range blacklistFields {
+		delete(update, f)
+	}
+
+	numAffected, err := session.SendUpdateOpWithSession(s.dbSession, sessionID, string(util.MustStringify(query)), nil, update)
+	if err != nil {
+		if strings.Contains(err.Error(), "parser") {
+			msg := strings.SplitN(err.Error(), ":", 2)[1]
+			return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "query", msg, nil)
+		}
+		return nil, common.ServerError
+	}
+
+	return &proto_rpc.AffectedResponse{
+		Affected: numAffected,
 	}, nil
 }

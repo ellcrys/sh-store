@@ -35,3 +35,16 @@ func (s *RPC) CreateBucket(ctx context.Context, req *proto_rpc.CreateBucketMsg) 
 	copier.Copy(&resp, bucket)
 	return &resp, nil
 }
+
+// getBucket fetches a bucket
+func (s *RPC) getBucket(name, identity string) (*db.Bucket, error) {
+	var b db.Bucket
+	err := s.db.Where("name = ? AND identity = ?", name, identity).First(&b).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, common.NewSingleAPIErr(404, "", "bucket", "bucket not found", nil)
+		}
+		return nil, common.ServerError
+	}
+	return &b, err
+}

@@ -29,6 +29,9 @@ var (
 	// OpCountObjects represents a count operation
 	OpCountObjects OpType = 3
 
+	// OpUpdateObjects represents an update operation
+	OpUpdateObjects OpType = 4
+
 	// MaxSessionIdleTime is the maximum duration a session can be idle before stopping
 	MaxSessionIdleTime = 10 * time.Minute
 
@@ -53,6 +56,12 @@ type Op struct {
 
 	// QueryWithObject is the query object for retrieving objects
 	QueryWithObject *db.Object
+
+	// UpdateObject is the object containing updates
+	UpdateObject interface{}
+
+	// NumAffectedObjects indicates the number of objects affected in an update/delete operation
+	NumAffectedObjects int64
 
 	// Out will be populated with queried objects
 	Out interface{}
@@ -228,6 +237,61 @@ func (a *Agent) count() error {
 	return db.CountObjects(a.tx, &query, a.curOp.Out)
 }
 
+// update objects matching a query
+func (a *Agent) update() error {
+
+	var err error
+
+	a.Lock()
+	defer a.Unlock()
+
+	if !a.began {
+		return fmt.Errorf("agent has not started. Did you call Start()?")
+	}
+
+	if a.curOp == nil {
+		return fmt.Errorf("operation object is required")
+	}
+
+	var query db.Object
+
+	// Use JSQ enabled query if op.QueryWithJSQ is set
+	if len(a.curOp.QueryWithJSQ) > 0 {
+
+		if !govalidator.IsJSON(a.curOp.QueryWithJSQ) {
+			return fmt.Errorf("query must be a json string")
+		}
+
+		jsq := jsq.NewJSQ(db.GetValidObjectFields())
+		if err := jsq.Parse(a.curOp.QueryWithJSQ); err != nil {
+			return fmt.Errorf("parser:%s", err)
+		}
+
+		sql, args, err := jsq.ToSQL()
+		if err != nil {
+			return errors.Wrap(err, "failed to generate SQL")
+		}
+
+		if a.debug {
+			logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, a.curOp.OrderBy, a.curOp.Limit)
+		}
+
+		query = db.Object{
+			QueryParams: db.QueryParams{
+				Expr: db.Expr{
+					Expr: sql,
+					Args: args,
+				},
+			},
+		}
+	} else {
+		query = *a.curOp.QueryWithObject
+	}
+
+	a.curOp.NumAffectedObjects, err = db.UpdateObjects(a.tx, &query, a.curOp.UpdateObject)
+	return err
+}
+
 // Debug turns on logging
 func (a *Agent) Debug() {
 	a.debug = true
@@ -307,18 +371,19 @@ func (a *Agent) Start(endCb func()) {
 			// process operations
 			switch op.OpType {
 			case OpPutObjects:
-				op.Error = a.put()
-				if op.Error != nil {
+				if op.Error = a.put(); op.Error != nil {
 					a.rollback()
 				}
 			case OpGetObjects:
-				op.Error = a.get()
-				if op.Error != nil {
+				if op.Error = a.get(); op.Error != nil {
 					a.rollback()
 				}
 			case OpCountObjects:
-				op.Error = a.count()
-				if op.Error != nil {
+				if op.Error = a.count(); op.Error != nil {
+					a.rollback()
+				}
+			case OpUpdateObjects:
+				if op.Error = a.update(); op.Error != nil {
 					a.rollback()
 				}
 			}
