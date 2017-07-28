@@ -10,7 +10,6 @@ import (
 	"github.com/ellcrys/elldb/session"
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/gorm"
-	"github.com/labstack/gommon/log"
 	"google.golang.org/grpc"
 )
 
@@ -60,21 +59,21 @@ func (s *RPC) Start(addr string, startedCB func(rpcServer *RPC)) error {
 		// connect database
 		s.db, err = db.Connect(sqlDBConStr)
 		if err != nil {
-			log.Errorf("%v", err)
+			logRPC.Errorf("Database Connection Error: %s", err)
 			s.Stop()
 			return
 		}
 
 		// initialize and seed database
 		if err = db.Initialize(s.db); err != nil {
-			log.Errorf("%v", err)
+			logRPC.Errorf("%v", err)
 			return
 		}
 
 		// connect to session registry
 		s.sessionReg, err = session.NewConsulRegistry()
 		if err != nil {
-			log.Errorf("%v", err)
+			logRPC.Errorf("%v", err)
 			s.Stop()
 			return
 		}
