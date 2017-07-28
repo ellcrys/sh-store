@@ -960,3 +960,15 @@ func TestObject(t *testing.T) {
 		})
 	})
 }
+
+func TestOrderByString(t *testing.T) {
+	Convey(".orderByToString", t, func() {
+		Convey("Should expected result", func() {
+			str := orderByToString([]*proto_rpc.OrderBy{
+				{Field: "field_a", Order: 0},
+				{Field: "field_b", Order: 1},
+			})
+			So(str, ShouldEqual, "field_a desc, field_b asc")
+		})
+	})
+}
