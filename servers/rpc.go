@@ -97,6 +97,8 @@ func (s *RPC) serve(lis net.Listener) error {
 // Stop stops the RPC server and all other sub routines
 func (s *RPC) Stop() error {
 	logRPC.Info("Stopping server")
-	s.server.Stop()
+	if s.server != nil {
+		s.server.Stop()
+	}
 	return nil
 }

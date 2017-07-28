@@ -23,7 +23,7 @@ func CreateRandomDB(con *sql.DB) (string, error) {
 
 // DropDB drops a database
 func DropDB(con *sql.DB, dbName string) error {
-	_, err := con.Query(fmt.Sprintf("DROP DATABASE %s;", dbName))
+	_, err := con.Exec(fmt.Sprintf("DROP DATABASE %s;", dbName))
 	return err
 }
 
