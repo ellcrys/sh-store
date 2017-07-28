@@ -1,7 +1,6 @@
 package servers
 
 import (
-	"database/sql"
 	"fmt"
 	"net"
 	"testing"
@@ -26,8 +25,6 @@ import (
 )
 
 var err error
-var testDB *sql.DB
-var dbName string
 var conStr = "postgresql://root@localhost:26257?sslmode=disable"
 var conStrWithDB string
 var rpcServerHost = "localhost"
@@ -36,19 +33,22 @@ var rpcServerPort = 4000
 func init() {
 	os.Setenv("ELLDB_RPC_ADDR", net.JoinHostPort(rpcServerHost, strconv.Itoa(rpcServerPort)))
 	oauth.SigningSecret = "secret"
+}
 
-	testDB, err = common.OpenDB(conStr)
+func setup(t *testing.T, f func(rpc, rpc2 *RPC)) {
+
+	var dbName string
+	testDB, err := common.OpenDB(conStr)
 	if err != nil {
 		panic(fmt.Errorf("failed to connect to database: %s", err))
 	}
+
 	dbName, err = common.CreateRandomDB(testDB)
 	if err != nil {
 		panic(fmt.Errorf("failed to create test database: %s", err))
 	}
-	conStrWithDB = "postgresql://root@localhost:26257/" + dbName + "?sslmode=disable"
-}
 
-func TestRPC(t *testing.T) {
+	conStrWithDB = "postgresql://root@localhost:26257/" + dbName + "?sslmode=disable"
 
 	dbCon, err := gorm.Open("postgres", conStrWithDB)
 	if err != nil {
@@ -83,212 +83,260 @@ func TestRPC(t *testing.T) {
 	rpc2.dbSession.SetDB(rpc2.db)
 	go rpc2.serve(lis)
 
-	IntegrationTest(t, rpc, rpc2)
+	f(rpc, rpc2)
+	rpc2.Stop()
 
 	defer func() {
 		common.DropDB(testDB, dbName)
 	}()
 }
 
-// rpc is the main test server (it is not running).
-// rpc2 is the remote server (it is running and bound to ELLDB_RPC_ADDR). Use
-// rpc2 to mock a remote session server.
-func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
-	Convey("RPC Integration Test", t, func() {
+func TestIdentity(t *testing.T) {
+	setup(t, func(rpc, rpc2 *RPC) {
+		Convey("Identity", t, func() {
+			c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
+			resp, err := rpc.CreateIdentity(context.Background(), c1)
+			So(err, ShouldBeNil)
+			var identity map[string]interface{}
+			util.FromJSON(resp.Object, &identity)
 
-		Convey("identity.go", func() {
-			Convey(".CreateIdentity", func() {
-				Convey("Should return error if validation is failed", func() {
-					c1 := &proto_rpc.CreateIdentityMsg{}
-					_, err := rpc.CreateIdentity(context.Background(), c1)
-					So(err, ShouldNotBeNil)
-					m, _ := util.JSONToMap(err.Error())
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 6)
+			c2 := &proto_rpc.CreateIdentityMsg{FirstName: "john2", LastName: "Doe2", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
+			resp, err = rpc.CreateIdentity(context.Background(), c2)
+			So(err, ShouldBeNil)
+			var identity2 map[string]interface{}
+			util.FromJSON(resp.Object, &identity2)
 
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"code":    "invalid_parameter",
-						"field":   "first_name",
-						"message": "First Name is required",
-					})
+			ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+			b := &proto_rpc.CreateBucketMsg{Name: util.RandString(5)}
+			bucket, err := rpc.CreateBucket(ctx, b)
+			So(err, ShouldBeNil)
+			So(bucket.Name, ShouldEqual, b.Name)
+			So(bucket.ID, ShouldHaveLength, 36)
 
-					So(errs[1], ShouldResemble, map[string]interface{}{
-						"code":    "invalid_parameter",
-						"field":   "last_name",
-						"message": "Last Name is required",
-					})
-
-					So(errs[2], ShouldResemble, map[string]interface{}{
-						"code":    "invalid_parameter",
-						"field":   "email",
-						"message": "Email is required",
-					})
-
-					So(errs[3], ShouldResemble, map[string]interface{}{
-						"message": "Email is not valid",
-						"code":    "invalid_parameter",
-						"field":   "email",
-					})
-
-					So(errs[4], ShouldResemble, map[string]interface{}{
-						"code":    "invalid_parameter",
-						"field":   "password",
-						"message": "Password is required",
-					})
-
-					So(errs[5], ShouldResemble, map[string]interface{}{
-						"field":   "password",
-						"message": "Password is too short. Must be at least 6 characters long",
-						"code":    "invalid_parameter",
-					})
-
-					Convey("Should return error if email is invalid", func() {
-						c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "invalid@", Password: "something"}
+			Convey("identity.go", func() {
+				Convey(".CreateIdentity", func() {
+					Convey("Should return error if validation is failed", func() {
+						c1 := &proto_rpc.CreateIdentityMsg{}
 						_, err := rpc.CreateIdentity(context.Background(), c1)
 						So(err, ShouldNotBeNil)
 						m, _ := util.JSONToMap(err.Error())
 						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-						So(errs, ShouldHaveLength, 1)
+						So(errs, ShouldHaveLength, 6)
+
 						So(errs[0], ShouldResemble, map[string]interface{}{
 							"code":    "invalid_parameter",
+							"field":   "first_name",
+							"message": "First Name is required",
+						})
+
+						So(errs[1], ShouldResemble, map[string]interface{}{
+							"code":    "invalid_parameter",
+							"field":   "last_name",
+							"message": "Last Name is required",
+						})
+
+						So(errs[2], ShouldResemble, map[string]interface{}{
+							"code":    "invalid_parameter",
 							"field":   "email",
+							"message": "Email is required",
+						})
+
+						So(errs[3], ShouldResemble, map[string]interface{}{
 							"message": "Email is not valid",
-						})
-					})
-				})
-
-				Convey("Should successfully create an identity", func() {
-					c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "user@example.com", Password: "something"}
-					resp, err := rpc.CreateIdentity(context.Background(), c1)
-					So(err, ShouldBeNil)
-					var m map[string]interface{}
-					err = util.FromJSON(resp.Object, &m)
-					So(err, ShouldBeNil)
-					So(m, ShouldHaveLength, 7)
-					So(m["id"], ShouldHaveLength, 36)
-					So(m["first_name"], ShouldEqual, c1.FirstName)
-					So(m["last_name"], ShouldEqual, c1.LastName)
-					So(m["email"], ShouldEqual, c1.Email)
-					So(m["password"], ShouldNotBeEmpty)
-					So(m["password"], ShouldNotEqual, c1.Password)
-					So(m["confirmed"], ShouldEqual, false)
-
-					Convey("Should return error if email has been used", func() {
-						_, err = rpc.CreateIdentity(context.Background(), c1)
-						So(err, ShouldNotBeNil)
-						m, _ := util.JSONToMap(err.Error())
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-						So(errs, ShouldHaveLength, 1)
-						So(errs[0], ShouldResemble, map[string]interface{}{
 							"code":    "invalid_parameter",
 							"field":   "email",
-							"message": "Email is not available",
-							"status":  "400",
+						})
+
+						So(errs[4], ShouldResemble, map[string]interface{}{
+							"code":    "invalid_parameter",
+							"field":   "password",
+							"message": "Password is required",
+						})
+
+						So(errs[5], ShouldResemble, map[string]interface{}{
+							"field":   "password",
+							"message": "Password is too short. Must be at least 6 characters long",
+							"code":    "invalid_parameter",
+						})
+
+						Convey("Should return error if email is invalid", func() {
+							c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "invalid@", Password: "something"}
+							_, err := rpc.CreateIdentity(context.Background(), c1)
+							So(err, ShouldNotBeNil)
+							m, _ := util.JSONToMap(err.Error())
+							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+							So(errs, ShouldHaveLength, 1)
+							So(errs[0], ShouldResemble, map[string]interface{}{
+								"code":    "invalid_parameter",
+								"field":   "email",
+								"message": "Email is not valid",
+							})
 						})
 					})
 
-					Convey("Should create client id and secret if identity is a developer", func() {
-						c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "user2@example.com", Password: "something", Developer: true}
+					Convey("Should successfully create an identity", func() {
+						c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something"}
 						resp, err := rpc.CreateIdentity(context.Background(), c1)
 						So(err, ShouldBeNil)
 						var m map[string]interface{}
 						err = util.FromJSON(resp.Object, &m)
 						So(err, ShouldBeNil)
-						So(m, ShouldHaveLength, 10)
-						So(m, ShouldContainKey, "client_id")
-						So(m, ShouldContainKey, "client_secret")
+						So(m, ShouldHaveLength, 7)
+						So(m["id"], ShouldHaveLength, 36)
+						So(m["first_name"], ShouldEqual, c1.FirstName)
+						So(m["last_name"], ShouldEqual, c1.LastName)
+						So(m["email"], ShouldEqual, c1.Email)
+						So(m["password"], ShouldNotBeEmpty)
+						So(m["password"], ShouldNotEqual, c1.Password)
+						So(m["confirmed"], ShouldEqual, false)
+
+						Convey("Should return error if email has been used", func() {
+							_, err = rpc.CreateIdentity(context.Background(), c1)
+							So(err, ShouldNotBeNil)
+							m, _ := util.JSONToMap(err.Error())
+							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+							So(errs, ShouldHaveLength, 1)
+							So(errs[0], ShouldResemble, map[string]interface{}{
+								"code":    "invalid_parameter",
+								"field":   "email",
+								"message": "Email is not available",
+								"status":  "400",
+							})
+						})
+
+						Convey("Should create client id and secret if identity is a developer", func() {
+							c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "user2@example.com", Password: "something", Developer: true}
+							resp, err := rpc.CreateIdentity(context.Background(), c1)
+							So(err, ShouldBeNil)
+							var m map[string]interface{}
+							err = util.FromJSON(resp.Object, &m)
+							So(err, ShouldBeNil)
+							So(m, ShouldHaveLength, 10)
+							So(m, ShouldContainKey, "client_id")
+							So(m, ShouldContainKey, "client_secret")
+						})
 					})
 				})
-			})
 
-			Convey(".GetIdentity", func() {
-				c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "user@example.com", Password: "something"}
-				_, err := rpc.CreateIdentity(context.Background(), c1)
-				So(err, ShouldBeNil)
-
-				Convey("Should successfully get identity by email", func() {
-					resp, err := rpc.GetIdentity(context.Background(), &proto_rpc.GetIdentityMsg{ID: c1.Email})
+				Convey(".GetIdentity", func() {
+					c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something"}
+					_, err := rpc.CreateIdentity(context.Background(), c1)
 					So(err, ShouldBeNil)
-					var m map[string]interface{}
-					err = util.FromJSON(resp.Object, &m)
-					So(err, ShouldBeNil)
-					So(c1.Email, ShouldEqual, m["email"])
 
-					Convey("Should successfully get identity by ID", func() {
-						resp, err := rpc.GetIdentity(context.Background(), &proto_rpc.GetIdentityMsg{ID: m["id"].(string)})
+					Convey("Should successfully get identity by email", func() {
+						resp, err := rpc.GetIdentity(context.Background(), &proto_rpc.GetIdentityMsg{ID: c1.Email})
 						So(err, ShouldBeNil)
 						var m map[string]interface{}
 						err = util.FromJSON(resp.Object, &m)
 						So(err, ShouldBeNil)
 						So(c1.Email, ShouldEqual, m["email"])
+
+						Convey("Should successfully get identity by ID", func() {
+							resp, err := rpc.GetIdentity(context.Background(), &proto_rpc.GetIdentityMsg{ID: m["id"].(string)})
+							So(err, ShouldBeNil)
+							var m map[string]interface{}
+							err = util.FromJSON(resp.Object, &m)
+							So(err, ShouldBeNil)
+							So(c1.Email, ShouldEqual, m["email"])
+						})
 					})
-				})
 
-				Convey("Should return error if identity is not found", func() {
-					_, err := rpc.GetIdentity(context.Background(), &proto_rpc.GetIdentityMsg{ID: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, _ := util.JSONToMap(err.Error())
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "404",
-						"message": "Identity not found",
-					})
-				})
-			})
-		})
-
-		Convey("bucket.go", func() {
-			Convey(".CreateBucket", func() {
-				Convey("Should return error if validation is failed", func() {
-					_, err := rpc.CreateBucket(context.Background(), &proto_rpc.CreateBucketMsg{})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"message": "Name is required",
-						"code":    "invalid_parameter",
-						"field":   "name",
-					})
-				})
-
-				Convey("Should successfully create a bucket", func() {
-					c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "user@example.com", Password: "something"}
-					resp, err := rpc.CreateIdentity(context.Background(), c1)
-					So(err, ShouldBeNil)
-					var identity map[string]interface{}
-					util.FromJSON(resp.Object, &identity)
-
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					b := &proto_rpc.CreateBucketMsg{Name: "mybucket"}
-					bucket, err := rpc.CreateBucket(ctx, b)
-					So(err, ShouldBeNil)
-					So(bucket.Name, ShouldEqual, "mybucket")
-					So(bucket.ID, ShouldHaveLength, 36)
-
-					Convey("Should return error if bucket name has been taken", func() {
-						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						b := &proto_rpc.CreateBucketMsg{Name: "mybucket"}
-						_, err = rpc.CreateBucket(ctx, b)
+					Convey("Should return error if identity is not found", func() {
+						_, err := rpc.GetIdentity(context.Background(), &proto_rpc.GetIdentityMsg{ID: "unknown"})
 						So(err, ShouldNotBeNil)
-
-						m, err := util.JSONToMap(err.Error())
-						So(err, ShouldBeNil)
+						m, _ := util.JSONToMap(err.Error())
 						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "400",
-							"field":   "name",
-							"message": "Bucket name has been used",
+							"status":  "404",
+							"message": "Identity not found",
 						})
 					})
 				})
 			})
 		})
+	})
+}
 
-		Convey("validation.go", func() {
+func TestBucket(t *testing.T) {
+	setup(t, func(rpc, rpc2 *RPC) {
+		Convey("Bucket", t, func() {
+			c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
+			resp, err := rpc.CreateIdentity(context.Background(), c1)
+			So(err, ShouldBeNil)
+			var identity map[string]interface{}
+			util.FromJSON(resp.Object, &identity)
+
+			c2 := &proto_rpc.CreateIdentityMsg{FirstName: "john2", LastName: "Doe2", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
+			resp, err = rpc.CreateIdentity(context.Background(), c2)
+			So(err, ShouldBeNil)
+			var identity2 map[string]interface{}
+			util.FromJSON(resp.Object, &identity2)
+
+			ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+			b := &proto_rpc.CreateBucketMsg{Name: util.RandString(5)}
+			bucket, err := rpc.CreateBucket(ctx, b)
+			So(err, ShouldBeNil)
+			So(bucket.Name, ShouldEqual, b.Name)
+			So(bucket.ID, ShouldHaveLength, 36)
+
+			Convey("bucket.go", func() {
+				Convey(".CreateBucket", func() {
+					Convey("Should return error if validation is failed", func() {
+						_, err := rpc.CreateBucket(context.Background(), &proto_rpc.CreateBucketMsg{})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"message": "Name is required",
+							"code":    "invalid_parameter",
+							"field":   "name",
+						})
+					})
+
+					Convey("Should successfully create a bucket", func() {
+						c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "user@example.com", Password: "something"}
+						resp, err := rpc.CreateIdentity(context.Background(), c1)
+						So(err, ShouldBeNil)
+						var identity map[string]interface{}
+						util.FromJSON(resp.Object, &identity)
+
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						b := &proto_rpc.CreateBucketMsg{Name: "mybucket"}
+						bucket, err := rpc.CreateBucket(ctx, b)
+						So(err, ShouldBeNil)
+						So(bucket.Name, ShouldEqual, "mybucket")
+						So(bucket.ID, ShouldHaveLength, 36)
+
+						Convey("Should return error if bucket name has been taken", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							b := &proto_rpc.CreateBucketMsg{Name: "mybucket"}
+							_, err = rpc.CreateBucket(ctx, b)
+							So(err, ShouldNotBeNil)
+
+							m, err := util.JSONToMap(err.Error())
+							So(err, ShouldBeNil)
+							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+							So(errs, ShouldHaveLength, 1)
+							So(errs[0], ShouldResemble, map[string]interface{}{
+								"status":  "400",
+								"field":   "name",
+								"message": "Bucket name has been used",
+							})
+						})
+					})
+				})
+			})
+
+		})
+	})
+}
+
+func TestValidations(t *testing.T) {
+	setup(t, func(rpc, rpc2 *RPC) {
+		Convey("Validation", t, func() {
 			Convey(".validateObjects", func() {
 				Convey("Should return error if no object is provided", func() {
 					errs, err := rpc.validateObjects(nil, nil)
@@ -387,18 +435,68 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 				})
 			})
 		})
+	})
+}
 
-		Convey("mapping.go", func() {
+func TestMapping(t *testing.T) {
+	setup(t, func(rpc, rpc2 *RPC) {
+		Convey("Mapping", t, func() {
+			c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
+			resp, err := rpc.CreateIdentity(context.Background(), c1)
+			So(err, ShouldBeNil)
+			var identity map[string]interface{}
+			util.FromJSON(resp.Object, &identity)
+
+			c2 := &proto_rpc.CreateIdentityMsg{FirstName: "john2", LastName: "Doe2", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
+			resp, err = rpc.CreateIdentity(context.Background(), c2)
+			So(err, ShouldBeNil)
+			var identity2 map[string]interface{}
+			util.FromJSON(resp.Object, &identity2)
+
+			ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+			b := &proto_rpc.CreateBucketMsg{Name: util.RandString(5)}
+			bucket, err := rpc.CreateBucket(ctx, b)
+			So(err, ShouldBeNil)
+			So(bucket.Name, ShouldEqual, b.Name)
+			So(bucket.ID, ShouldHaveLength, 36)
+
 			Convey(".CreateMapping / .GetMapping / .GetAllMapping", func() {
-				c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "user@example.com", Password: "something"}
+				c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something"}
 				resp, err := rpc.CreateIdentity(context.Background(), c1)
 				So(err, ShouldBeNil)
 				var identity map[string]interface{}
 				util.FromJSON(resp.Object, &identity)
 
+				Convey("Should return error if bucket is not provided", func() {
+					_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{})
+					So(err, ShouldNotBeNil)
+					m, err := util.JSONToMap(err.Error())
+					So(err, ShouldBeNil)
+					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+					So(errs, ShouldHaveLength, 1)
+					So(errs[0], ShouldResemble, map[string]interface{}{
+						"status":  "400",
+						"message": "bucket is required",
+					})
+				})
+
+				Convey("Should return error if bucket does not exists", func() {
+					_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Bucket: "unknown"})
+					So(err, ShouldNotBeNil)
+					m, err := util.JSONToMap(err.Error())
+					So(err, ShouldBeNil)
+					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+					So(errs, ShouldHaveLength, 1)
+					So(errs[0], ShouldResemble, map[string]interface{}{
+						"status":  "404",
+						"field":   "bucket",
+						"message": "bucket not found",
+					})
+				})
+
 				Convey("Should return error if mapping value is malformed json", func() {
 					var mapping = `{ "key": "column"`
-					_, err := rpc.CreateMapping(context.Background(), &proto_rpc.CreateMappingMsg{Name: "some_name", Mapping: []byte(mapping)})
+					_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: "some_name", Bucket: b.Name, Mapping: []byte(mapping)})
 					So(err, ShouldNotBeNil)
 					m, err := util.JSONToMap(err.Error())
 					So(err, ShouldBeNil)
@@ -412,7 +510,7 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 
 				Convey("Should return error if mapping value has unexpected type", func() {
 					var mapping = `{ "key": 123 }`
-					_, err := rpc.CreateMapping(context.Background(), &proto_rpc.CreateMappingMsg{Name: "some_name", Mapping: []byte(mapping)})
+					_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: "some_name", Bucket: b.Name, Mapping: []byte(mapping)})
 					So(err, ShouldNotBeNil)
 					m, err := util.JSONToMap(err.Error())
 					So(err, ShouldBeNil)
@@ -425,15 +523,19 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 				})
 
 				Convey("Should successfully create a mapping", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+					ctx := context.WithValue(ctx, CtxIdentity, identity["id"])
+					b := &proto_rpc.CreateBucketMsg{Name: util.RandString(5)}
+					_, err = rpc.CreateBucket(ctx, b)
+					So(err, ShouldBeNil)
+
 					name := util.RandString(5)
 					mapping := `{ "user_id": "owner_id" }`
-					resp, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: name, Mapping: []byte(mapping)})
+					resp, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: name, Bucket: b.Name, Mapping: []byte(mapping)})
 					So(err, ShouldBeNil)
 					So(resp.Name, ShouldEqual, name)
 
 					Convey("Should return error if mapping name has been used", func() {
-						_, err = rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: name, Mapping: []byte(mapping)})
+						_, err = rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: name, Bucket: b.Name, Mapping: []byte(mapping)})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
@@ -480,6 +582,7 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 							m, err := util.JSONToMap(string(resp.Mapping))
 							So(err, ShouldBeNil)
 							So(m["name"], ShouldEqual, name)
+							So(m["bucket"], ShouldEqual, b.Name)
 							mapping, err := util.JSONToMap(m["mapping"].(string))
 							So(err, ShouldBeNil)
 							So(mapping, ShouldResemble, map[string]interface{}{
@@ -491,7 +594,7 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 					Convey(".GetAllMapping", func() {
 						name := util.RandString(5)
 						mapping := `{ "user_id": "owner_id" }`
-						_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: name, Mapping: []byte(mapping)})
+						_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: name, Bucket: b.Name, Mapping: []byte(mapping)})
 						So(err, ShouldBeNil)
 
 						Convey("Should get all mapping. Limit result to 1 mapping", func() {
@@ -537,47 +640,341 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 				})
 			})
 		})
+	})
+}
 
-		Convey("objects.go", func() {
-			c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "user@example.com", Password: "something", Developer: true}
+func TestObject(t *testing.T) {
+	setup(t, func(rpc, rpc2 *RPC) {
+		Convey("Object", t, func() {
+			c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
 			resp, err := rpc.CreateIdentity(context.Background(), c1)
 			So(err, ShouldBeNil)
 			var identity map[string]interface{}
 			util.FromJSON(resp.Object, &identity)
 
-			c2 := &proto_rpc.CreateIdentityMsg{FirstName: "john2", LastName: "Doe2", Email: "user2@example.com", Password: "something", Developer: true}
+			c2 := &proto_rpc.CreateIdentityMsg{FirstName: "john2", LastName: "Doe2", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
 			resp, err = rpc.CreateIdentity(context.Background(), c2)
 			So(err, ShouldBeNil)
 			var identity2 map[string]interface{}
 			util.FromJSON(resp.Object, &identity2)
 
 			ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-			b := &proto_rpc.CreateBucketMsg{Name: "mybucket"}
+			b := &proto_rpc.CreateBucketMsg{Name: util.RandString(5)}
 			bucket, err := rpc.CreateBucket(ctx, b)
 			So(err, ShouldBeNil)
-			So(bucket.Name, ShouldEqual, "mybucket")
+			So(bucket.Name, ShouldEqual, b.Name)
 			So(bucket.ID, ShouldHaveLength, 36)
 
-			Convey(".CreateObjects", func() {
+			Convey("objects.go", func() {
 
-				Convey("Should return error if bucket is not provided", func() {
-					_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: ""})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "400",
-						"field":   "bucket",
-						"message": "bucket name is required",
+				Convey(".CreateObjects", func() {
+
+					Convey("Should return error if bucket is not provided", func() {
+						_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: ""})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "400",
+							"field":   "bucket",
+							"message": "bucket name is required",
+						})
+					})
+
+					Convey("With bucket", func() {
+
+						Convey("Should return error if bucket does not exists", func() {
+							_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: "unknown"})
+							So(err, ShouldNotBeNil)
+							m, err := util.JSONToMap(err.Error())
+							So(err, ShouldBeNil)
+							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+							So(errs, ShouldHaveLength, 1)
+							So(errs[0], ShouldResemble, map[string]interface{}{
+								"field":   "bucket",
+								"message": "bucket not found",
+								"status":  "404",
+							})
+						})
+
+						Convey("Should return error if validation fails", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							objs := util.MustStringify([]map[string]interface{}{
+								{"owner_id": 123, "key": "mykey"},
+							})
+							_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+							So(err, ShouldNotBeNil)
+							m, err := util.JSONToMap(err.Error())
+							So(err, ShouldBeNil)
+							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+							So(errs, ShouldHaveLength, 1)
+							So(errs[0], ShouldResemble, map[string]interface{}{
+								"code":    "invalid_parameter",
+								"message": "object 0: owner_id must be a string",
+							})
+						})
+
+						Convey("Should return error if owner of object does not exist", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							objs := util.MustStringify([]map[string]interface{}{
+								{"owner_id": "unknown", "key": "mykey"},
+							})
+							_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+							So(err, ShouldNotBeNil)
+							m, err := util.JSONToMap(err.Error())
+							So(err, ShouldBeNil)
+							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+							So(errs, ShouldHaveLength, 1)
+							So(errs[0], ShouldResemble, map[string]interface{}{
+								"code":    "invalid_parameter",
+								"message": "owner of object(s) does not exist",
+							})
+						})
+
+						Convey("Should return permission error if authenticated identity does not have permission to create object for the owner", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							objs := util.MustStringify([]map[string]interface{}{
+								{"owner_id": identity2["id"].(string), "key": "mykey"},
+							})
+							_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+							So(err, ShouldNotBeNil)
+							m, err := util.JSONToMap(err.Error())
+							So(err, ShouldBeNil)
+							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+							So(errs, ShouldHaveLength, 1)
+							So(errs[0], ShouldResemble, map[string]interface{}{
+								"status":  "401",
+								"message": "permission denied: you are not authorized to create objects for the owner",
+							})
+						})
+
+						Convey("Should successfully create new objects", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							objs := util.MustStringify([]map[string]interface{}{
+								{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
+								{"owner_id": identity["id"].(string), "key": "mykey2", "value": "myval2"},
+							})
+							resp, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+							So(err, ShouldBeNil)
+							var m []map[string]interface{}
+							err = util.FromJSON(resp.Objects, &m)
+							So(err, ShouldBeNil)
+							So(m, ShouldHaveLength, 2)
+							So(m[0]["bucket"], ShouldEqual, b.Name)
+							So(m[1]["bucket"], ShouldEqual, b.Name)
+							So(m[0]["creator_id"], ShouldEqual, identity["id"])
+							So(m[1]["creator_id"], ShouldEqual, identity["id"])
+							So(m[0]["owner_id"], ShouldEqual, identity["id"])
+							So(m[1]["owner_id"], ShouldEqual, identity["id"])
+						})
+
+						Convey("With mapping", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							mappingName := util.RandString(5)
+							mapping := `{ "user_id": "owner_id", "first_name": "key", "last_name": "value" }`
+							_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: mappingName, Bucket: b.Name, Mapping: []byte(mapping)})
+							So(err, ShouldBeNil)
+
+							Convey("Should return error if mapping does not exists", func() {
+								ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+								objs := util.MustStringify([]map[string]interface{}{
+									{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
+								})
+								_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs, Mapping: "unknown"})
+								So(err, ShouldNotBeNil)
+								m, err := util.JSONToMap(err.Error())
+								So(err, ShouldBeNil)
+								errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+								So(errs, ShouldHaveLength, 1)
+								So(errs[0], ShouldResemble, map[string]interface{}{
+									"message": "mapping not found",
+									"status":  "400",
+								})
+							})
+
+							Convey("Should successfully create object using a mapping", func() {
+								ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+								objs := util.MustStringify([]map[string]interface{}{
+									{"user_id": identity["id"].(string), "first_name": "John", "last_name": "Doe"},
+								})
+								resp, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs, Mapping: mappingName})
+								So(err, ShouldBeNil)
+								var m []map[string]interface{}
+								err = util.FromJSON(resp.Objects, &m)
+								So(err, ShouldBeNil)
+								So(m, ShouldHaveLength, 1)
+								So(m[0], ShouldContainKey, "user_id")
+								So(m[0], ShouldContainKey, "first_name")
+								So(m[0], ShouldContainKey, "last_name")
+								So(m[0]["user_id"], ShouldEqual, identity["id"])
+								So(m[0]["first_name"], ShouldEqual, "John")
+								So(m[0]["last_name"], ShouldEqual, "Doe")
+							})
+						})
+
+						Convey("With local session", func() {
+							Convey("Should return error if session does not exists locally and in session registry", func() {
+								ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+								ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", "invalid"))
+								objs := util.MustStringify([]map[string]interface{}{
+									{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
+								})
+								_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+								So(err, ShouldNotBeNil)
+								m, err := util.JSONToMap(err.Error())
+								So(err, ShouldBeNil)
+								errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+								So(errs, ShouldHaveLength, 1)
+								So(errs[0], ShouldResemble, map[string]interface{}{
+									"status":  "404",
+									"message": "session not found",
+								})
+							})
+
+							Convey("Should return error when using a local, unregistered session not belonging to the authenticated identity/caller", func() {
+								sessionID := util.UUID4()
+								rpc.dbSession.CreateUnregisteredSession(sessionID, identity2["id"].(string))
+								ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+								ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID))
+								objs := util.MustStringify([]map[string]interface{}{
+									{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
+								})
+								_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+								So(err, ShouldNotBeNil)
+								m, err := util.JSONToMap(err.Error())
+								So(err, ShouldBeNil)
+								errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+								So(errs, ShouldHaveLength, 1)
+								So(errs[0], ShouldResemble, map[string]interface{}{
+									"status":  "401",
+									"message": "permission denied: you don't have permission to perform this operation",
+								})
+							})
+
+							Convey("Should successfully create object using a local, unregistered session", func() {
+								sessionID := util.UUID4()
+								rpc.dbSession.CreateUnregisteredSession(sessionID, identity["id"].(string))
+								So(err, ShouldBeNil)
+								ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+								ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID))
+								objs := util.MustStringify([]map[string]interface{}{
+									{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
+								})
+								resp, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+								So(err, ShouldBeNil)
+								var m []map[string]interface{}
+								err = util.FromJSON(resp.Objects, &m)
+								So(err, ShouldBeNil)
+								So(m, ShouldHaveLength, 1)
+								So(m[0]["bucket"], ShouldEqual, b.Name)
+								So(m[0]["creator_id"], ShouldEqual, identity["id"])
+								So(m[0]["owner_id"], ShouldEqual, identity["id"])
+								rpc.dbSession.CommitEnd(sessionID)
+							})
+						})
+
+						Convey("With remote session", func() {
+							Convey("Should return error if authenticated user is not the owner of the session", func() {
+								sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), "some_id")
+								So(err, ShouldBeNil)
+
+								token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+									"id":   identity["client_id"],
+									"type": oauth.TokenTypeApp,
+									"iat":  time.Now().Unix(),
+								})
+
+								ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+								ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
+								_, err = rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
+									Bucket: b.Name,
+								})
+								So(err, ShouldNotBeNil)
+								m, err := util.JSONToMap(err.Error())
+								So(err, ShouldBeNil)
+								errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+								So(errs, ShouldHaveLength, 1)
+								So(errs[0], ShouldResemble, map[string]interface{}{
+									"status":  "401",
+									"message": "permission denied: you don't have permission to perform this operation",
+								})
+							})
+
+							Convey("Should return error if session is not found in remote node", func() {
+								sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
+								So(err, ShouldBeNil)
+
+								// remove session manually from remote node
+								rpc2.dbSession.RemoveAgent(sessionID)
+
+								token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+									"id":   identity["client_id"],
+									"type": oauth.TokenTypeApp,
+									"iat":  time.Now().Unix(),
+								})
+
+								ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+								ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
+								_, err = rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
+									Bucket: b.Name,
+								})
+								So(err, ShouldNotBeNil)
+								m, err := util.JSONToMap(err.Error())
+								So(err, ShouldBeNil)
+								errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+								So(errs, ShouldHaveLength, 1)
+								So(errs[0], ShouldResemble, map[string]interface{}{
+									"status":  "404",
+									"message": "session not found",
+								})
+							})
+						})
 					})
 				})
 
-				Convey("With bucket", func() {
+				Convey(".GetObjects", func() {
+
+					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+					objs := util.MustStringify([]map[string]interface{}{
+						{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
+						{"owner_id": identity["id"].(string), "key": "mykey2", "value": "myval2"},
+					})
+					_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+					So(err, ShouldBeNil)
+
+					Convey("Should return error if bucket name is not provided", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "400",
+							"field":   "bucket",
+							"message": "bucket name is required",
+						})
+					})
+
+					Convey("Should return error if bucket is not provided", func() {
+						_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: ""})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "400",
+							"field":   "bucket",
+							"message": "bucket name is required",
+						})
+					})
 
 					Convey("Should return error if bucket does not exists", func() {
-						_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: "unknown"})
+						_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: "unknown"})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
@@ -590,46 +987,36 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 						})
 					})
 
-					Convey("Should return error if validation fails", func() {
-						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						objs := util.MustStringify([]map[string]interface{}{
-							{"owner_id": 123, "key": "mykey"},
-						})
-						_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+					Convey("Should return error if owner does not exist", func() {
+						_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: "unknown"})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
 						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"code":    "invalid_parameter",
-							"message": "object 0: owner_id must be a string",
+							"message": "owner not found",
+							"status":  "404",
+							"field":   "owner",
 						})
 					})
 
-					Convey("Should return error if owner of object does not exist", func() {
-						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						objs := util.MustStringify([]map[string]interface{}{
-							{"owner_id": "unknown", "key": "mykey"},
-						})
-						_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+					Convey("Should return error if creator does not exist", func() {
+						_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Creator: "unknown"})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
 						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"code":    "invalid_parameter",
-							"message": "owner of object(s) does not exist",
+							"message": "creator not found",
+							"status":  "404",
+							"field":   "creator",
 						})
 					})
 
-					Convey("Should return permission error if authenticated identity does not have permission to create object for the owner", func() {
-						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						objs := util.MustStringify([]map[string]interface{}{
-							{"owner_id": identity2["id"].(string), "key": "mykey"},
-						})
-						_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+					Convey("Should return error if authenticated user is not the owner of the queried object", func() {
+						_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity2["id"].(string)})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
@@ -637,82 +1024,44 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
 							"status":  "401",
-							"message": "permission denied: you are not authorized to create objects for the owner",
+							"message": "permission denied: you are not authorized to access objects belonging to the owner",
 						})
 					})
 
-					Convey("Should successfully create new objects", func() {
-						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						objs := util.MustStringify([]map[string]interface{}{
-							{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
-							{"owner_id": identity["id"].(string), "key": "mykey2", "value": "myval2"},
+					Convey("Should return error if query parsing error occurred", func() {
+						q := []byte(`{"unknown_field": "value"}`)
+						_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Query: q, Owner: identity["id"].(string)})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"message": "unknown query field: unknown_field",
+							"status":  "400",
+							"code":    "invalid_parameter",
+							"field":   "query",
 						})
-						resp, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+					})
+
+					Convey("Should successfully fetch objects", func() {
+						resp, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity["id"].(string)})
 						So(err, ShouldBeNil)
 						var m []map[string]interface{}
 						err = util.FromJSON(resp.Objects, &m)
 						So(err, ShouldBeNil)
 						So(m, ShouldHaveLength, 2)
-						So(m[0]["bucket"], ShouldEqual, b.Name)
-						So(m[1]["bucket"], ShouldEqual, b.Name)
-						So(m[0]["creator_id"], ShouldEqual, identity["id"])
-						So(m[1]["creator_id"], ShouldEqual, identity["id"])
-						So(m[0]["owner_id"], ShouldEqual, identity["id"])
-						So(m[1]["owner_id"], ShouldEqual, identity["id"])
 					})
 
 					Convey("With mapping", func() {
 						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
 						mappingName := util.RandString(5)
 						mapping := `{ "user_id": "owner_id", "first_name": "key", "last_name": "value" }`
-						_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: mappingName, Mapping: []byte(mapping)})
+						_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: mappingName, Bucket: b.Name, Mapping: []byte(mapping)})
 						So(err, ShouldBeNil)
 
-						Convey("Should return error if mapping does not exists", func() {
-							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-							objs := util.MustStringify([]map[string]interface{}{
-								{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
-							})
-							_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs, Mapping: "unknown"})
-							So(err, ShouldNotBeNil)
-							m, err := util.JSONToMap(err.Error())
-							So(err, ShouldBeNil)
-							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-							So(errs, ShouldHaveLength, 1)
-							So(errs[0], ShouldResemble, map[string]interface{}{
-								"message": "mapping not found",
-								"status":  "400",
-							})
-						})
-
-						Convey("Should successfully create object using a mapping", func() {
-							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-							objs := util.MustStringify([]map[string]interface{}{
-								{"user_id": identity["id"].(string), "first_name": "John", "last_name": "Doe"},
-							})
-							resp, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs, Mapping: mappingName})
-							So(err, ShouldBeNil)
-							var m []map[string]interface{}
-							err = util.FromJSON(resp.Objects, &m)
-							So(err, ShouldBeNil)
-							So(m, ShouldHaveLength, 1)
-							So(m[0], ShouldContainKey, "user_id")
-							So(m[0], ShouldContainKey, "first_name")
-							So(m[0], ShouldContainKey, "last_name")
-							So(m[0]["user_id"], ShouldEqual, identity["id"])
-							So(m[0]["first_name"], ShouldEqual, "John")
-							So(m[0]["last_name"], ShouldEqual, "Doe")
-						})
-					})
-
-					Convey("With local session", func() {
-						Convey("Should return error if session does not exists locally and in session registry", func() {
-							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-							ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", "invalid"))
-							objs := util.MustStringify([]map[string]interface{}{
-								{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
-							})
-							_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+						Convey("Should return error if mapping does not exist", func() {
+							_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity["id"].(string), Mapping: "unknown"})
 							So(err, ShouldNotBeNil)
 							m, err := util.JSONToMap(err.Error())
 							So(err, ShouldBeNil)
@@ -720,84 +1069,68 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 							So(errs, ShouldHaveLength, 1)
 							So(errs[0], ShouldResemble, map[string]interface{}{
 								"status":  "404",
-								"message": "session not found",
+								"code":    "invalid_parameter",
+								"field":   "mapping",
+								"message": "mapping not found",
 							})
 						})
 
-						Convey("Should return error when using a local, unregistered session not belonging to the authenticated identity/caller", func() {
-							sessionID := util.UUID4()
-							rpc.dbSession.CreateUnregisteredSession(sessionID, identity2["id"].(string))
-							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-							ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID))
-							objs := util.MustStringify([]map[string]interface{}{
-								{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
-							})
-							_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
-							So(err, ShouldNotBeNil)
-							m, err := util.JSONToMap(err.Error())
-							So(err, ShouldBeNil)
-							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-							So(errs, ShouldHaveLength, 1)
-							So(errs[0], ShouldResemble, map[string]interface{}{
-								"status":  "401",
-								"message": "permission denied: you don't have permission to perform this operation",
-							})
-						})
-
-						Convey("Should successfully create object using a local, unregistered session", func() {
-							sessionID := util.UUID4()
-							rpc.dbSession.CreateUnregisteredSession(sessionID, identity["id"].(string))
-							So(err, ShouldBeNil)
-							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-							ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID))
-							objs := util.MustStringify([]map[string]interface{}{
-								{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
-							})
-							resp, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+						Convey("Should successfully fetch objects with a mapping applied", func() {
+							resp, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity["id"].(string), Mapping: mappingName})
 							So(err, ShouldBeNil)
 							var m []map[string]interface{}
 							err = util.FromJSON(resp.Objects, &m)
 							So(err, ShouldBeNil)
-							So(m, ShouldHaveLength, 1)
-							So(m[0]["bucket"], ShouldEqual, b.Name)
-							So(m[0]["creator_id"], ShouldEqual, identity["id"])
-							So(m[0]["owner_id"], ShouldEqual, identity["id"])
-							rpc.dbSession.CommitEnd(sessionID)
+							So(m, ShouldHaveLength, 2)
+							So(m[0], ShouldContainKey, "user_id")
+							So(m[0], ShouldContainKey, "first_name")
+							So(m[0], ShouldContainKey, "last_name")
+							So(m[1], ShouldContainKey, "user_id")
+							So(m[1], ShouldContainKey, "first_name")
+							So(m[1], ShouldContainKey, "last_name")
 						})
+
 					})
 
 					Convey("With remote session", func() {
-						Convey("Should return error if authenticated user is not the owner of the session", func() {
-							sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), "some_id")
-							So(err, ShouldBeNil)
 
-							token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-								"id":   identity["client_id"],
-								"type": oauth.TokenTypeApp,
-								"iat":  time.Now().Unix(),
-							})
-
+						Convey("Should return error if session is not found on local or remote registry", func() {
 							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-							ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
-							_, err = rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
-								Bucket: b.Name,
-							})
+							ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", "unknown_session"))
+							_, err := rpc.GetObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
 							So(err, ShouldNotBeNil)
 							m, err := util.JSONToMap(err.Error())
 							So(err, ShouldBeNil)
 							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
 							So(errs, ShouldHaveLength, 1)
 							So(errs[0], ShouldResemble, map[string]interface{}{
-								"status":  "401",
-								"message": "permission denied: you don't have permission to perform this operation",
+								"message": "session not found",
+								"status":  "404",
 							})
 						})
 
-						Convey("Should return error if session is not found in remote node", func() {
+						Convey("Should return error if authenticated identity/caller is not the owner of the session", func() {
+							sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), "some_id")
+							So(err, ShouldBeNil)
+
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID))
+							_, err = rpc.GetObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
+							So(err, ShouldNotBeNil)
+							m, err := util.JSONToMap(err.Error())
+							So(err, ShouldBeNil)
+							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+							So(errs, ShouldHaveLength, 1)
+							So(errs[0], ShouldResemble, map[string]interface{}{
+								"message": "permission denied: you don't have permission to perform this operation",
+								"status":  "401",
+							})
+						})
+
+						Convey("Should return error if session exists in registry but not found in the remote node", func() {
 							sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
 							So(err, ShouldBeNil)
 
-							// remove session manually from remote node
 							rpc2.dbSession.RemoveAgent(sessionID)
 
 							token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
@@ -808,9 +1141,7 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 
 							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
 							ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
-							_, err = rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
-								Bucket: b.Name,
-							})
+							_, err = rpc.GetObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
 							So(err, ShouldNotBeNil)
 							m, err := util.JSONToMap(err.Error())
 							So(err, ShouldBeNil)
@@ -821,138 +1152,64 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 								"message": "session not found",
 							})
 						})
+
+						Convey("Should successfully get objects", func() {
+							sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
+							So(err, ShouldBeNil)
+
+							token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+								"id":   identity["client_id"],
+								"type": oauth.TokenTypeApp,
+								"iat":  time.Now().Unix(),
+							})
+
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
+							resp, err := rpc.GetObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
+							So(err, ShouldBeNil)
+							var m []map[string]interface{}
+							err = util.FromJSON(resp.Objects, &m)
+							So(err, ShouldBeNil)
+							So(m, ShouldHaveLength, 2)
+							rpc2.dbSession.CommitEnd(sessionID)
+						})
 					})
 				})
-			})
 
-			Convey(".GetObjects", func() {
+				Convey(".UpdateObjects", func() {
 
-				ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-				objs := util.MustStringify([]map[string]interface{}{
-					{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
-					{"owner_id": identity["id"].(string), "key": "mykey2", "value": "myval2"},
-				})
-				_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
-				So(err, ShouldBeNil)
-
-				Convey("Should return error if bucket name is not provided", func() {
 					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
+					imBucket := &proto_rpc.CreateBucketMsg{Name: util.RandString(5), Immutable: true}
+					bucket, err := rpc.CreateBucket(ctx, imBucket)
 					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "400",
-						"field":   "bucket",
-						"message": "bucket name is required",
+					So(bucket.Name, ShouldEqual, imBucket.Name)
+					So(bucket.ID, ShouldHaveLength, 36)
+
+					objs := []map[string]interface{}{
+						{"owner_id": identity["id"].(string), "key": util.RandString(5), "value": "myval"},
+						{"owner_id": identity["id"].(string), "key": util.RandString(5), "value": "myval2"},
+					}
+					_, err = rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: util.MustStringify(objs)})
+					So(err, ShouldBeNil)
+
+					Convey("Should return error if bucket name is provided", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.UpdateObjects(ctx, &proto_rpc.UpdateObjectsMsg{})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "400",
+							"field":   "bucket",
+							"message": "bucket name is required",
+						})
 					})
-				})
 
-				Convey("Should return error if bucket is not provided", func() {
-					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: ""})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "400",
-						"field":   "bucket",
-						"message": "bucket name is required",
-					})
-				})
-
-				Convey("Should return error if bucket does not exists", func() {
-					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"field":   "bucket",
-						"message": "bucket not found",
-						"status":  "404",
-					})
-				})
-
-				Convey("Should return error if owner does not exist", func() {
-					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"message": "owner not found",
-						"status":  "404",
-						"field":   "owner",
-					})
-				})
-
-				Convey("Should return error if creator does not exist", func() {
-					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Creator: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"message": "creator not found",
-						"status":  "404",
-						"field":   "creator",
-					})
-				})
-
-				Convey("Should return error if authenticated user is not the owner of the queried object", func() {
-					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity2["id"].(string)})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "401",
-						"message": "permission denied: you are not authorized to access objects belonging to the owner",
-					})
-				})
-
-				Convey("Should return error if query parsing error occurred", func() {
-					q := []byte(`{"unknown_field": "value"}`)
-					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Query: q, Owner: identity["id"].(string)})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"message": "unknown query field: unknown_field",
-						"status":  "400",
-						"code":    "invalid_parameter",
-						"field":   "query",
-					})
-				})
-
-				Convey("Should successfully fetch objects", func() {
-					resp, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity["id"].(string)})
-					So(err, ShouldBeNil)
-					var m []map[string]interface{}
-					err = util.FromJSON(resp.Objects, &m)
-					So(err, ShouldBeNil)
-					So(m, ShouldHaveLength, 2)
-				})
-
-				Convey("With mapping", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					mappingName := util.RandString(5)
-					mapping := `{ "user_id": "owner_id", "first_name": "key", "last_name": "value" }`
-					_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{Name: mappingName, Mapping: []byte(mapping)})
-					So(err, ShouldBeNil)
-
-					Convey("Should return error if mapping does not exist", func() {
-						_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity["id"].(string), Mapping: "unknown"})
+					Convey("Should return error if bucket does not exist", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.UpdateObjects(ctx, &proto_rpc.UpdateObjectsMsg{Bucket: "unknown"})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
@@ -960,804 +1217,822 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
 							"status":  "404",
-							"code":    "invalid_parameter",
-							"field":   "mapping",
-							"message": "mapping not found",
+							"field":   "bucket",
+							"message": "bucket not found",
 						})
 					})
 
-					Convey("Should successfully fetch objects with a mapping applied", func() {
-						resp, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity["id"].(string), Mapping: mappingName})
-						So(err, ShouldBeNil)
-						var m []map[string]interface{}
-						err = util.FromJSON(resp.Objects, &m)
-						So(err, ShouldBeNil)
-						So(m, ShouldHaveLength, 2)
-						So(m[0], ShouldContainKey, "user_id")
-						So(m[0], ShouldContainKey, "first_name")
-						So(m[0], ShouldContainKey, "last_name")
-						So(m[1], ShouldContainKey, "user_id")
-						So(m[1], ShouldContainKey, "first_name")
-						So(m[1], ShouldContainKey, "last_name")
-					})
-
-				})
-
-				Convey("With remote session", func() {
-
-					Convey("Should return error if session is not found on local or remote registry", func() {
+					Convey("Should return error if bucket is immutable", func() {
 						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", "unknown_session"))
-						_, err := rpc.GetObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
+						_, err := rpc.UpdateObjects(ctx, &proto_rpc.UpdateObjectsMsg{Bucket: imBucket.Name})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
 						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"message": "session not found",
+							"status":  "400",
+							"field":   "bucket",
+							"message": "bucket is not mutable",
+						})
+					})
+
+					Convey("Should return error if owner is not found", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.UpdateObjects(ctx, &proto_rpc.UpdateObjectsMsg{Bucket: b.Name, Owner: "unknown"})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
 							"status":  "404",
+							"field":   "owner",
+							"message": "owner not found",
 						})
 					})
 
-					Convey("Should return error if authenticated identity/caller is not the owner of the session", func() {
-						sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), "some_id")
-						So(err, ShouldBeNil)
-
+					Convey("Should return error if creator is not found", func() {
 						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID))
-						_, err = rpc.GetObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
+						_, err := rpc.UpdateObjects(ctx, &proto_rpc.UpdateObjectsMsg{Bucket: b.Name, Creator: "unknown"})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
 						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"message": "permission denied: you don't have permission to perform this operation",
+							"status":  "404",
+							"field":   "creator",
+							"message": "creator not found",
+						})
+					})
+
+					Convey("Should return error if authenticated user is not authorized to access objects belonging to the owner", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity2["id"])
+						_, err := rpc.UpdateObjects(ctx, &proto_rpc.UpdateObjectsMsg{Bucket: b.Name, Owner: identity["id"].(string)})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
 							"status":  "401",
+							"message": "permission denied: you are not authorized to access objects belonging to the owner",
 						})
 					})
 
-					Convey("Should return error if session exists in registry but not found in the remote node", func() {
-						sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
-						So(err, ShouldBeNil)
+					Convey("Without mapping", func() {
 
-						rpc2.dbSession.RemoveAgent(sessionID)
+						Convey("Should successfully update objects", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							resp, err := rpc.UpdateObjects(ctx, &proto_rpc.UpdateObjectsMsg{
+								Bucket: b.Name,
+								Owner:  identity["id"].(string),
+								Query:  util.MustStringify(map[string]interface{}{"key": objs[0]["key"]}),
+								Update: util.MustStringify(map[string]interface{}{"value": "new value"}),
+							})
+							So(err, ShouldBeNil)
+							So(resp.Affected, ShouldEqual, 1)
 
-						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   identity["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
+							var obj db.Object
+							err = rpc.db.Where(db.Object{Key: objs[0]["key"].(string)}).Find(&obj).Error
+							So(err, ShouldBeNil)
+							So(obj.Value, ShouldEqual, "new value")
 						})
+					})
 
-						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
-						_, err = rpc.GetObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
+					Convey("With mapping", func() {
+						Convey("Should return error if mapping does not exist", func() {
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							_, err := rpc.UpdateObjects(ctx, &proto_rpc.UpdateObjectsMsg{
+								Bucket:  b.Name,
+								Owner:   identity["id"].(string),
+								Mapping: "unknown",
+							})
+							So(err, ShouldNotBeNil)
+							m, err := util.JSONToMap(err.Error())
+							So(err, ShouldBeNil)
+							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+							So(errs, ShouldHaveLength, 1)
+							So(errs[0], ShouldResemble, map[string]interface{}{
+								"field":   "mapping",
+								"message": "mapping not found",
+								"status":  "404",
+								"code":    "invalid_parameter",
+							})
+						})
+					})
+				})
+
+				Convey(".CountObjects", func() {
+					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+					objs := util.MustStringify([]map[string]interface{}{
+						{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
+						{"owner_id": identity["id"].(string), "key": "mykey2", "value": "myval2"},
+					})
+					_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
+					So(err, ShouldBeNil)
+
+					Convey("Should return error if bucket is not provided", func() {
+						_, err := rpc.CountObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: ""})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
 						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "404",
-							"message": "session not found",
+							"status":  "400",
+							"field":   "bucket",
+							"message": "bucket name is required",
 						})
 					})
 
-					Convey("Should successfully get objects", func() {
-						sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
-						So(err, ShouldBeNil)
-
-						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   identity["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
-						})
-
-						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
-						resp, err := rpc.GetObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
-						So(err, ShouldBeNil)
-						var m []map[string]interface{}
-						err = util.FromJSON(resp.Objects, &m)
-						So(err, ShouldBeNil)
-						So(m, ShouldHaveLength, 2)
-						rpc2.dbSession.CommitEnd(sessionID)
-					})
-				})
-			})
-
-			Convey(".CountObjects", func() {
-				ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-				objs := util.MustStringify([]map[string]interface{}{
-					{"owner_id": identity["id"].(string), "key": "mykey", "value": "myval"},
-					{"owner_id": identity["id"].(string), "key": "mykey2", "value": "myval2"},
-				})
-				_, err := rpc.CreateObjects(ctx, &proto_rpc.CreateObjectsMsg{Bucket: b.Name, Objects: objs})
-				So(err, ShouldBeNil)
-
-				Convey("Should return error if authenticated user is not authorized to access objects belonging to the owner", func() {
-					_, err := rpc.CountObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity2["id"].(string)})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "401",
-						"message": "permission denied: you are not authorized to access objects belonging to the owner",
-					})
-				})
-
-				Convey("Should return error if bucket is not provided", func() {
-					_, err := rpc.CountObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: ""})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "400",
-						"field":   "bucket",
-						"message": "bucket name is required",
-					})
-				})
-
-				Convey("Should return error if bucket does not exists", func() {
-					_, err := rpc.CountObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"field":   "bucket",
-						"message": "bucket not found",
-						"status":  "404",
-					})
-				})
-
-				Convey("Should return error if owner does not exist", func() {
-					_, err := rpc.CountObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"message": "owner not found",
-						"status":  "404",
-						"field":   "owner",
-					})
-				})
-
-				Convey("Should return error if creator does not exist", func() {
-					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Creator: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"message": "creator not found",
-						"status":  "404",
-						"field":   "creator",
-					})
-				})
-
-				Convey("Should successfully return expected count", func() {
-					resp, err := rpc.CountObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity["id"].(string)})
-					So(err, ShouldBeNil)
-					So(resp.Count, ShouldEqual, 2)
-				})
-
-				Convey("With remote session", func() {
-					Convey("Should return error if session exists in registry but not found in the remote node", func() {
-						sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
-						So(err, ShouldBeNil)
-
-						rpc2.dbSession.RemoveAgent(sessionID)
-
-						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   identity["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
-						})
-
-						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
-						_, err = rpc.CountObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
+					Convey("Should return error if authenticated user is not authorized to access objects belonging to the owner", func() {
+						_, err := rpc.CountObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity2["id"].(string)})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
 						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "404",
-							"message": "session not found",
+							"status":  "401",
+							"message": "permission denied: you are not authorized to access objects belonging to the owner",
 						})
 					})
 
-					Convey("Should successfully get object count", func() {
-						sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
+					Convey("Should return error if bucket does not exists", func() {
+						_, err := rpc.CountObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: "unknown"})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-
-						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   identity["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"field":   "bucket",
+							"message": "bucket not found",
+							"status":  "404",
 						})
+					})
 
-						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
-						resp, err := rpc.CountObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
+					Convey("Should return error if owner does not exist", func() {
+						_, err := rpc.CountObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: "unknown"})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"message": "owner not found",
+							"status":  "404",
+							"field":   "owner",
+						})
+					})
+
+					Convey("Should return error if creator does not exist", func() {
+						_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Creator: "unknown"})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"message": "creator not found",
+							"status":  "404",
+							"field":   "creator",
+						})
+					})
+
+					Convey("Should successfully return expected count", func() {
+						resp, err := rpc.CountObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: identity["id"].(string)})
 						So(err, ShouldBeNil)
 						So(resp.Count, ShouldEqual, 2)
-						rpc2.dbSession.CommitEnd(sessionID)
+					})
+
+					Convey("With remote session", func() {
+						Convey("Should return error if session exists in registry but not found in the remote node", func() {
+							sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
+							So(err, ShouldBeNil)
+
+							rpc2.dbSession.RemoveAgent(sessionID)
+
+							token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+								"id":   identity["client_id"],
+								"type": oauth.TokenTypeApp,
+								"iat":  time.Now().Unix(),
+							})
+
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
+							_, err = rpc.CountObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
+							So(err, ShouldNotBeNil)
+							m, err := util.JSONToMap(err.Error())
+							So(err, ShouldBeNil)
+							errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+							So(errs, ShouldHaveLength, 1)
+							So(errs[0], ShouldResemble, map[string]interface{}{
+								"status":  "404",
+								"message": "session not found",
+							})
+						})
+
+						Convey("Should successfully get object count", func() {
+							sessionID, err := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
+							So(err, ShouldBeNil)
+
+							token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+								"id":   identity["client_id"],
+								"type": oauth.TokenTypeApp,
+								"iat":  time.Now().Unix(),
+							})
+
+							ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+							ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
+							resp, err := rpc.CountObjects(ctx2, &proto_rpc.GetObjectMsg{Bucket: b.Name})
+							So(err, ShouldBeNil)
+							So(resp.Count, ShouldEqual, 2)
+							rpc2.dbSession.CommitEnd(sessionID)
+						})
 					})
 				})
+
 			})
 		})
+	})
+}
 
-		Convey("session.go", func() {
-
-			c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: "user@example.com", Password: "something", Developer: true}
+func TestSession(t *testing.T) {
+	setup(t, func(rpc, rpc2 *RPC) {
+		Convey("Session", t, func() {
+			c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
 			resp, err := rpc.CreateIdentity(context.Background(), c1)
 			So(err, ShouldBeNil)
 			var identity map[string]interface{}
 			util.FromJSON(resp.Object, &identity)
 
+			c2 := &proto_rpc.CreateIdentityMsg{FirstName: "john2", LastName: "Doe2", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
+			resp, err = rpc.CreateIdentity(context.Background(), c2)
+			So(err, ShouldBeNil)
+			var identity2 map[string]interface{}
+			util.FromJSON(resp.Object, &identity2)
+
 			ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-			b := &proto_rpc.CreateBucketMsg{Name: "mybucket"}
+			b := &proto_rpc.CreateBucketMsg{Name: util.RandString(5)}
 			bucket, err := rpc.CreateBucket(ctx, b)
 			So(err, ShouldBeNil)
-			So(bucket.Name, ShouldEqual, "mybucket")
+			So(bucket.Name, ShouldEqual, b.Name)
 			So(bucket.ID, ShouldHaveLength, 36)
 
-			Convey(".CreateSession", func() {
+			Convey("session.go", func() {
 
-				Convey("Should return error if session id is not a UUID4", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err := rpc.CreateSession(ctx, &proto_rpc.Session{ID: "invalid_id"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"message": "id is invalid. Expected UUIDv4 value",
-						"status":  "400",
+				Convey(".CreateSession", func() {
+
+					Convey("Should return error if session id is not a UUID4", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.CreateSession(ctx, &proto_rpc.Session{ID: "invalid_id"})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"message": "id is invalid. Expected UUIDv4 value",
+							"status":  "400",
+						})
+					})
+
+					Convey("Should successfully create a session with an explicitly provided ID", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						id := util.UUID4()
+						resp, err := rpc.CreateSession(ctx, &proto_rpc.Session{ID: id})
+						So(err, ShouldBeNil)
+						So(resp.ID, ShouldEqual, id)
+					})
+
+					Convey("Should successfully create a session with an implicitly assigned ID when ID is not provide", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						resp, err := rpc.CreateSession(ctx, &proto_rpc.Session{})
+						So(err, ShouldBeNil)
+						So(resp.ID, ShouldNotBeEmpty)
 					})
 				})
 
-				Convey("Should successfully create a session with an explicitly provided ID", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					id := util.UUID4()
-					resp, err := rpc.CreateSession(ctx, &proto_rpc.Session{ID: id})
-					So(err, ShouldBeNil)
-					So(resp.ID, ShouldEqual, id)
-				})
+				Convey(".GetSession", func() {
+					Convey("Should return error if session id is not provided", func() {
+						_, err := rpc.GetSession(context.Background(), &proto_rpc.Session{})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "400",
+							"message": "session id is required",
+						})
+					})
 
-				Convey("Should successfully create a session with an implicitly assigned ID when ID is not provide", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					resp, err := rpc.CreateSession(ctx, &proto_rpc.Session{})
-					So(err, ShouldBeNil)
-					So(resp.ID, ShouldNotBeEmpty)
-				})
-			})
+					Convey("Should return permission error if authenticated identity/caller is not the owner of the session", func() {
+						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "401",
+							"message": "permission denied: you don't have permission to perform this operation",
+						})
+					})
 
-			Convey(".GetSession", func() {
-				Convey("Should return error if session id is not provided", func() {
-					_, err := rpc.GetSession(context.Background(), &proto_rpc.Session{})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "400",
-						"message": "session id is required",
+					Convey("Should return error is session does not exists", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: "unknown"})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"message": "session not found",
+							"status":  "404",
+						})
+					})
+
+					Convey("Using a remote session; Should return permission error if authenticated identity/caller is not the owner of the session", func() {
+						sid := util.UUID4()
+						err := rpc.sessionReg.Add(session.RegItem{SID: sid,
+							Address: "localhost",
+							Port:    9000,
+							Meta: map[string]interface{}{
+								"identity": "some_identity",
+							},
+						})
+						So(err, ShouldBeNil)
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err = rpc.GetSession(ctx, &proto_rpc.Session{ID: sid})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "401",
+							"message": "permission denied: you don't have permission to perform this operation",
+						})
+					})
+
+					Convey("With a remote session; Should successfully get a session", func() {
+						sid := util.UUID4()
+						err := rpc.sessionReg.Add(session.RegItem{SID: sid,
+							Address: "localhost",
+							Port:    9000,
+							Meta: map[string]interface{}{
+								"identity": identity["id"].(string),
+							},
+						})
+						So(err, ShouldBeNil)
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						s, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: sid})
+						So(err, ShouldBeNil)
+						So(s.ID, ShouldEqual, sid)
+					})
+
+					Convey("With a unregistered session; Should successfully get a session", func() {
+						sid := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), identity["id"].(string))
+						So(err, ShouldBeNil)
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						s, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: sid})
+						So(err, ShouldBeNil)
+						So(s.ID, ShouldEqual, sid)
 					})
 				})
 
-				Convey("Should return permission error if authenticated identity/caller is not the owner of the session", func() {
-					sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "401",
-						"message": "permission denied: you don't have permission to perform this operation",
+				Convey(".DeleteSession", func() {
+					Convey("Should return error if session id is not provided", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "400",
+							"message": "session id is required",
+						})
+					})
+
+					Convey("Should return permission error if authenticated identity/caller is not the owner of the session", func() {
+						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "401",
+							"message": "permission denied: you don't have permission to perform this operation",
+						})
+					})
+
+					Convey("With an unregistered session; Should successfully delete session", func() {
+						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), identity["id"].(string))
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						resp, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldBeNil)
+						So(resp.ID, ShouldEqual, sessionID)
+						So(rpc.dbSession.HasSession(sessionID), ShouldBeFalse)
+					})
+
+					Convey("With an remote session; Should successfully delete session", func() {
+						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+							"id":   identity["client_id"],
+							"type": oauth.TokenTypeApp,
+							"iat":  time.Now().Unix(),
+						})
+
+						sessionID := util.UUID4()
+						rpc2.dbSession.CreateSession(sessionID, identity["id"].(string))
+
+						ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
+						ctx = context.WithValue(ctx, CtxIdentity, identity["id"])
+						resp, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldBeNil)
+						So(resp.ID, ShouldEqual, sessionID)
+						So(rpc.dbSession.HasSession(sessionID), ShouldBeFalse)
+					})
+
+					Convey("With remote session; Should return error if session exists in registry but not found in the node hosting the session", func() {
+						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+							"id":   identity["client_id"],
+							"type": oauth.TokenTypeApp,
+							"iat":  time.Now().Unix(),
+						})
+
+						sessionID := util.UUID4()
+						rpc2.dbSession.CreateSession(sessionID, identity["id"].(string))
+						rpc2.dbSession.RemoveAgent(sessionID)
+
+						ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
+						ctx = context.WithValue(ctx, CtxIdentity, identity["id"])
+						_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "404",
+							"message": "session not found",
+						})
+					})
+
+					Convey("Should return error if session does not exist locally or in session registry", func() {
+						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+							"id":   identity["client_id"],
+							"type": oauth.TokenTypeApp,
+							"iat":  time.Now().Unix(),
+						})
+
+						sessionID := util.UUID4()
+
+						ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
+						ctx = context.WithValue(ctx, CtxIdentity, identity["id"])
+						_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "404",
+							"message": "session not found",
+						})
+					})
+
+					Convey("With an remote session; Should return error if authenticated identity/caller is not the owner of the session", func() {
+						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+							"id":   identity["client_id"],
+							"type": oauth.TokenTypeApp,
+							"iat":  time.Now().Unix(),
+						})
+
+						sessionID := util.UUID4()
+						rpc2.dbSession.CreateSession(sessionID, "some_id")
+
+						ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
+						ctx = context.WithValue(ctx, CtxIdentity, identity["id"])
+						_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "401",
+							"message": "permission denied: you don't have permission to perform this operation",
+						})
 					})
 				})
 
-				Convey("Should return error is session does not exists", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"message": "session not found",
-						"status":  "404",
+				Convey(".CommitSession", func() {
+					Convey("Should return error if session id is not provide", func() {
+						_, err := rpc.CommitSession(context.Background(), &proto_rpc.Session{})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "400",
+							"message": "session id is required",
+						})
+					})
+
+					Convey("With local session; Should return error if authenticated identity is not the owner of the session", func() {
+						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.CommitSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "401",
+							"message": "permission denied: you don't have permission to perform this operation",
+						})
+					})
+
+					Convey("With local session; Should successfully commit a session", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), identity["id"].(string))
+
+						obj1 := db.NewObject()
+						obj1.Key = util.RandString(10)
+						obj1.Value = "myvalue"
+						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID))
+						_, err := rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
+							Bucket:  b.Name,
+							Objects: util.MustStringify([]*db.Object{obj1}),
+						})
+						So(err, ShouldBeNil)
+
+						_, err = rpc.CommitSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldBeNil)
+
+						var count int
+						err = rpc.db.Model(db.Object{}).Where("key = ?", obj1.Key).Count(&count).Error
+						So(err, ShouldBeNil)
+						So(count, ShouldEqual, 1)
+					})
+
+					Convey("Should return error if session does not exist locally or in session registry", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err = rpc.CommitSession(ctx, &proto_rpc.Session{ID: "unknown"})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "404",
+							"message": "session not found",
+						})
+					})
+
+					Convey("With remote session; Should return error if authenticated identity is not the owner of the session", func() {
+						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), "some_id")
+
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.CommitSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "401",
+							"message": "permission denied: you don't have permission to perform this operation",
+						})
+					})
+
+					Convey("With remote session; Should successfully commit a session", func() {
+						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
+
+						obj1 := db.NewObject()
+						obj1.Key = util.RandString(10)
+						obj1.Value = "myvalue"
+
+						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+							"id":   identity["client_id"],
+							"type": oauth.TokenTypeApp,
+							"iat":  time.Now().Unix(),
+						})
+
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
+						_, err := rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
+							Bucket:  b.Name,
+							Objects: util.MustStringify([]*db.Object{obj1}),
+						})
+						So(err, ShouldBeNil)
+
+						_, err = rpc.CommitSession(ctx2, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldBeNil)
+
+						var count int
+						err = rpc.db.Model(db.Object{}).Where("key = ?", obj1.Key).Count(&count).Error
+						So(err, ShouldBeNil)
+						So(count, ShouldEqual, 1)
+					})
+
+					Convey("With remote session; Should return error if session was not found in remode node", func() {
+						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
+
+						// remove the session from the remote node
+						rpc2.dbSession.RemoveAgent(sessionID)
+
+						obj1 := db.NewObject()
+						obj1.Key = util.RandString(10)
+						obj1.Value = "myvalue"
+
+						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+							"id":   identity["client_id"],
+							"type": oauth.TokenTypeApp,
+							"iat":  time.Now().Unix(),
+						})
+
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
+
+						_, err := rpc.CommitSession(ctx2, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "404",
+							"message": "session not found",
+						})
 					})
 				})
 
-				Convey("Using a remote session; Should return permission error if authenticated identity/caller is not the owner of the session", func() {
-					sid := util.UUID4()
-					err := rpc.sessionReg.Add(session.RegItem{SID: sid,
-						Address: "localhost",
-						Port:    9000,
-						Meta: map[string]interface{}{
-							"identity": "some_identity",
-						},
-					})
-					So(err, ShouldBeNil)
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err = rpc.GetSession(ctx, &proto_rpc.Session{ID: sid})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "401",
-						"message": "permission denied: you don't have permission to perform this operation",
-					})
-				})
-
-				Convey("With a remote session; Should successfully get a session", func() {
-					sid := util.UUID4()
-					err := rpc.sessionReg.Add(session.RegItem{SID: sid,
-						Address: "localhost",
-						Port:    9000,
-						Meta: map[string]interface{}{
-							"identity": identity["id"].(string),
-						},
-					})
-					So(err, ShouldBeNil)
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					s, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: sid})
-					So(err, ShouldBeNil)
-					So(s.ID, ShouldEqual, sid)
-				})
-
-				Convey("With a unregistered session; Should successfully get a session", func() {
-					sid := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), identity["id"].(string))
-					So(err, ShouldBeNil)
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					s, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: sid})
-					So(err, ShouldBeNil)
-					So(s.ID, ShouldEqual, sid)
-				})
-			})
-
-			Convey(".DeleteSession", func() {
-				Convey("Should return error if session id is not provided", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "400",
-						"message": "session id is required",
-					})
-				})
-
-				Convey("Should return permission error if authenticated identity/caller is not the owner of the session", func() {
-					sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "401",
-						"message": "permission denied: you don't have permission to perform this operation",
-					})
-				})
-
-				Convey("With an unregistered session; Should successfully delete session", func() {
-					sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), identity["id"].(string))
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					resp, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldBeNil)
-					So(resp.ID, ShouldEqual, sessionID)
-					So(rpc.dbSession.HasSession(sessionID), ShouldBeFalse)
-				})
-
-				Convey("With an remote session; Should successfully delete session", func() {
-					token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-						"id":   identity["client_id"],
-						"type": oauth.TokenTypeApp,
-						"iat":  time.Now().Unix(),
+				Convey(".RollbackSession", func() {
+					Convey("Should return error if session id is not provided", func() {
+						_, err := rpc.RollbackSession(context.Background(), &proto_rpc.Session{})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "400",
+							"message": "session id is required",
+						})
 					})
 
-					sessionID := util.UUID4()
-					rpc2.dbSession.CreateSession(sessionID, identity["id"].(string))
-
-					ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
-					ctx = context.WithValue(ctx, CtxIdentity, identity["id"])
-					resp, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldBeNil)
-					So(resp.ID, ShouldEqual, sessionID)
-					So(rpc.dbSession.HasSession(sessionID), ShouldBeFalse)
-				})
-
-				Convey("With remote session; Should return error if session exists in registry but not found in the node hosting the session", func() {
-					token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-						"id":   identity["client_id"],
-						"type": oauth.TokenTypeApp,
-						"iat":  time.Now().Unix(),
+					Convey("With local session; Should return error if authenticated identity is not the owner of the session", func() {
+						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.RollbackSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "401",
+							"message": "permission denied: you don't have permission to perform this operation",
+						})
 					})
 
-					sessionID := util.UUID4()
-					rpc2.dbSession.CreateSession(sessionID, identity["id"].(string))
-					rpc2.dbSession.RemoveAgent(sessionID)
+					Convey("With local session; Should successfully rollback a session", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), identity["id"].(string))
 
-					ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
-					ctx = context.WithValue(ctx, CtxIdentity, identity["id"])
-					_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "404",
-						"message": "session not found",
-					})
-				})
+						obj1 := db.NewObject()
+						obj1.Key = util.RandString(10)
+						obj1.Value = "myvalue"
+						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID))
+						_, err := rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
+							Bucket:  b.Name,
+							Objects: util.MustStringify([]*db.Object{obj1}),
+						})
+						So(err, ShouldBeNil)
 
-				Convey("Should return error if session does not exist locally or in session registry", func() {
-					token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-						"id":   identity["client_id"],
-						"type": oauth.TokenTypeApp,
-						"iat":  time.Now().Unix(),
+						_, err = rpc.RollbackSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldBeNil)
+
+						var count int
+						err = rpc.db.Model(db.Object{}).Where("key = ?", obj1.Key).Count(&count).Error
+						So(err, ShouldBeNil)
+						So(count, ShouldEqual, 0)
 					})
 
-					sessionID := util.UUID4()
-
-					ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
-					ctx = context.WithValue(ctx, CtxIdentity, identity["id"])
-					_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "404",
-						"message": "session not found",
-					})
-				})
-
-				Convey("With an remote session; Should return error if authenticated identity/caller is not the owner of the session", func() {
-					token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-						"id":   identity["client_id"],
-						"type": oauth.TokenTypeApp,
-						"iat":  time.Now().Unix(),
+					Convey("Should return error if session does not exist locally or in session registry", func() {
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err = rpc.RollbackSession(ctx, &proto_rpc.Session{ID: "unknown"})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "404",
+							"message": "session not found",
+						})
 					})
 
-					sessionID := util.UUID4()
-					rpc2.dbSession.CreateSession(sessionID, "some_id")
+					Convey("With remote session; Should return error if authenticated identity is not the owner of the session", func() {
+						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), "some_id")
 
-					ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
-					ctx = context.WithValue(ctx, CtxIdentity, identity["id"])
-					_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "401",
-						"message": "permission denied: you don't have permission to perform this operation",
-					})
-				})
-			})
-
-			Convey(".CommitSession", func() {
-				Convey("Should return error if session id is not provide", func() {
-					_, err := rpc.CommitSession(context.Background(), &proto_rpc.Session{})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "400",
-						"message": "session id is required",
-					})
-				})
-
-				Convey("With local session; Should return error if authenticated identity is not the owner of the session", func() {
-					sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err := rpc.CommitSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "401",
-						"message": "permission denied: you don't have permission to perform this operation",
-					})
-				})
-
-				Convey("With local session; Should successfully commit a session", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), identity["id"].(string))
-
-					obj1 := db.NewObject()
-					obj1.Key = util.RandString(10)
-					obj1.Value = "myvalue"
-					ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID))
-					_, err := rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
-						Bucket:  b.Name,
-						Objects: util.MustStringify([]*db.Object{obj1}),
-					})
-					So(err, ShouldBeNil)
-
-					_, err = rpc.CommitSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldBeNil)
-
-					var count int
-					err = rpc.db.Model(db.Object{}).Where("key = ?", obj1.Key).Count(&count).Error
-					So(err, ShouldBeNil)
-					So(count, ShouldEqual, 1)
-				})
-
-				Convey("Should return error if session does not exist locally or in session registry", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err = rpc.CommitSession(ctx, &proto_rpc.Session{ID: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "404",
-						"message": "session not found",
-					})
-				})
-
-				Convey("With remote session; Should return error if authenticated identity is not the owner of the session", func() {
-					sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), "some_id")
-
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err := rpc.CommitSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "401",
-						"message": "permission denied: you don't have permission to perform this operation",
-					})
-				})
-
-				Convey("With remote session; Should successfully commit a session", func() {
-					sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
-
-					obj1 := db.NewObject()
-					obj1.Key = util.RandString(10)
-					obj1.Value = "myvalue"
-
-					token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-						"id":   identity["client_id"],
-						"type": oauth.TokenTypeApp,
-						"iat":  time.Now().Unix(),
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						_, err := rpc.RollbackSession(ctx, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "401",
+							"message": "permission denied: you don't have permission to perform this operation",
+						})
 					})
 
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
-					_, err := rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
-						Bucket:  b.Name,
-						Objects: util.MustStringify([]*db.Object{obj1}),
-					})
-					So(err, ShouldBeNil)
+					Convey("With remote session; Should successfully rollback a session", func() {
+						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
 
-					_, err = rpc.CommitSession(ctx2, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldBeNil)
+						obj1 := db.NewObject()
+						obj1.Key = util.RandString(10)
+						obj1.Value = "myvalue"
 
-					var count int
-					err = rpc.db.Model(db.Object{}).Where("key = ?", obj1.Key).Count(&count).Error
-					So(err, ShouldBeNil)
-					So(count, ShouldEqual, 1)
-				})
+						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+							"id":   identity["client_id"],
+							"type": oauth.TokenTypeApp,
+							"iat":  time.Now().Unix(),
+						})
 
-				Convey("With remote session; Should return error if session was not found in remode node", func() {
-					sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
+						_, err := rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
+							Bucket:  b.Name,
+							Objects: util.MustStringify([]*db.Object{obj1}),
+						})
+						So(err, ShouldBeNil)
 
-					// remove the session from the remote node
-					rpc2.dbSession.RemoveAgent(sessionID)
+						_, err = rpc.RollbackSession(ctx2, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldBeNil)
 
-					obj1 := db.NewObject()
-					obj1.Key = util.RandString(10)
-					obj1.Value = "myvalue"
-
-					token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-						"id":   identity["client_id"],
-						"type": oauth.TokenTypeApp,
-						"iat":  time.Now().Unix(),
+						var count int
+						err = rpc.db.Model(db.Object{}).Where("key = ?", obj1.Key).Count(&count).Error
+						So(err, ShouldBeNil)
+						So(count, ShouldEqual, 0)
 					})
 
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
+					Convey("With remote session; Should return error if session was not found in remode node", func() {
+						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
 
-					_, err := rpc.CommitSession(ctx2, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "404",
-						"message": "session not found",
-					})
-				})
-			})
+						// remove the session from the remote node
+						rpc2.dbSession.RemoveAgent(sessionID)
 
-			Convey(".RollbackSession", func() {
-				Convey("Should return error if session id is not provide", func() {
-					_, err := rpc.RollbackSession(context.Background(), &proto_rpc.Session{})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "400",
-						"message": "session id is required",
-					})
-				})
+						obj1 := db.NewObject()
+						obj1.Key = util.RandString(10)
+						obj1.Value = "myvalue"
 
-				Convey("With local session; Should return error if authenticated identity is not the owner of the session", func() {
-					sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err := rpc.RollbackSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "401",
-						"message": "permission denied: you don't have permission to perform this operation",
-					})
-				})
+						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
+							"id":   identity["client_id"],
+							"type": oauth.TokenTypeApp,
+							"iat":  time.Now().Unix(),
+						})
 
-				Convey("With local session; Should successfully rollback a session", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), identity["id"].(string))
+						ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
 
-					obj1 := db.NewObject()
-					obj1.Key = util.RandString(10)
-					obj1.Value = "myvalue"
-					ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID))
-					_, err := rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
-						Bucket:  b.Name,
-						Objects: util.MustStringify([]*db.Object{obj1}),
-					})
-					So(err, ShouldBeNil)
-
-					_, err = rpc.RollbackSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldBeNil)
-
-					var count int
-					err = rpc.db.Model(db.Object{}).Where("key = ?", obj1.Key).Count(&count).Error
-					So(err, ShouldBeNil)
-					So(count, ShouldEqual, 0)
-				})
-
-				Convey("Should return error if session does not exist locally or in session registry", func() {
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err = rpc.RollbackSession(ctx, &proto_rpc.Session{ID: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "404",
-						"message": "session not found",
-					})
-				})
-
-				Convey("With remote session; Should return error if authenticated identity is not the owner of the session", func() {
-					sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), "some_id")
-
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					_, err := rpc.RollbackSession(ctx, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "401",
-						"message": "permission denied: you don't have permission to perform this operation",
-					})
-				})
-
-				Convey("With remote session; Should successfully rollback a session", func() {
-					sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
-
-					obj1 := db.NewObject()
-					obj1.Key = util.RandString(10)
-					obj1.Value = "myvalue"
-
-					token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-						"id":   identity["client_id"],
-						"type": oauth.TokenTypeApp,
-						"iat":  time.Now().Unix(),
-					})
-
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
-					_, err := rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
-						Bucket:  b.Name,
-						Objects: util.MustStringify([]*db.Object{obj1}),
-					})
-					So(err, ShouldBeNil)
-
-					_, err = rpc.RollbackSession(ctx2, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldBeNil)
-
-					var count int
-					err = rpc.db.Model(db.Object{}).Where("key = ?", obj1.Key).Count(&count).Error
-					So(err, ShouldBeNil)
-					So(count, ShouldEqual, 0)
-				})
-
-				Convey("With remote session; Should return error if session was not found in remode node", func() {
-					sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), identity["id"].(string))
-
-					// remove the session from the remote node
-					rpc2.dbSession.RemoveAgent(sessionID)
-
-					obj1 := db.NewObject()
-					obj1.Key = util.RandString(10)
-					obj1.Value = "myvalue"
-
-					token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-						"id":   identity["client_id"],
-						"type": oauth.TokenTypeApp,
-						"iat":  time.Now().Unix(),
-					})
-
-					ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
-					ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
-
-					_, err := rpc.RollbackSession(ctx2, &proto_rpc.Session{ID: sessionID})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "404",
-						"message": "session not found",
+						_, err := rpc.RollbackSession(ctx2, &proto_rpc.Session{ID: sessionID})
+						So(err, ShouldNotBeNil)
+						m, err := util.JSONToMap(err.Error())
+						So(err, ShouldBeNil)
+						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						So(errs, ShouldHaveLength, 1)
+						So(errs[0], ShouldResemble, map[string]interface{}{
+							"status":  "404",
+							"message": "session not found",
+						})
 					})
 				})
 			})
 		})
+	})
+}
 
-		Convey("interceptors.go", func() {
+func TestInterceptor(t *testing.T) {
+	setup(t, func(rpc, rpc2 *RPC) {
+		Convey("Interceptor", t, func() {
 			Convey("Should return error if identity does not exists", func() {
 				_, err := rpc.processAppTokenClaims(context.Background(), map[string]interface{}{
 					"id": "unknown",
@@ -1772,10 +2047,6 @@ func IntegrationTest(t *testing.T, rpc, rpc2 *RPC) {
 					"message": "permission denied. Invalid token",
 				})
 			})
-		})
-
-		Reset(func() {
-			common.ClearTable(rpc.db.DB(), []string{"buckets", "objects", "identities", "mappings"}...)
 		})
 	})
 }

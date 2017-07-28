@@ -266,6 +266,7 @@ func (s *HTTP) createMapping(w http.ResponseWriter, r *http.Request) (interface{
 	var err error
 	var resp *proto_rpc.CreateMappingResponse
 	var body struct {
+		Bucket  string                 `json:"bucket"`
 		Name    string                 `json:"name"`
 		Mapping map[string]interface{} `json:"mapping"`
 	}
@@ -278,6 +279,7 @@ func (s *HTTP) createMapping(w http.ResponseWriter, r *http.Request) (interface{
 		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
 		ctx := metadata.NewContext(context.Background(), md)
 		resp, err = client.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{
+			Bucket:  body.Bucket,
 			Name:    body.Name,
 			Mapping: util.MustStringify(body.Mapping),
 		})

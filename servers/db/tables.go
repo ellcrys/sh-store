@@ -45,6 +45,7 @@ func NewBucket() *Bucket {
 type Mapping struct {
 	SN        int64  `json:"-" structs:"-" mapstructure:"-" gorm:"primary_key"`
 	ID        string `json:"id,omitempty" structs:"id,omitempty" mapstructure:"id,omitempty" gorm:"type:varchar(36)"`
+	Bucket    string `json:"bucket,omitempty" structs:"bucket,omitempty" mapstructure:"bucket,omitempty"`
 	Identity  string `json:"identity,omitempty" structs:"identity,omitempty" mapstructure:"identity,omitempty"`
 	Name      string `json:"name,omitempty" structs:"name,omitempty" mapstructure:"name,omitempty" gorm:"type:varchar(36)"`
 	Mapping   string `json:"mapping,omitempty" structs:"mapping,omitempty" mapstructure:"mapping,omitempty" gorm:"type:varchar(256)"`

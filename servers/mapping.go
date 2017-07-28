@@ -8,17 +8,32 @@ import (
 	"github.com/ellcrys/elldb/servers/proto_rpc"
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/gorm"
+	"github.com/kr/pretty"
 	"golang.org/x/net/context"
 )
 
 // MaxGetAllMappingLimit is the maximum number of mapping to return for GetAllMapping()
 var MaxGetAllMappingLimit = int32(50)
 
-// CreateMapping creates a mapping for an identity
+// CreateMapping creates a mapping for a bucket
 func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg) (*proto_rpc.CreateMappingResponse, error) {
 
 	if len(req.Name) == 0 {
 		req.Name = util.UUID4()
+	}
+
+	if len(req.Bucket) == 0 {
+		return nil, common.NewSingleAPIErr(400, "", "", "bucket is required", nil)
+	}
+
+	developerID := ctx.Value(CtxIdentity).(string)
+
+	bucket, err := s.getBucket(req.Bucket)
+	if err != nil {
+		return nil, err
+	} else if bucket.Identity != developerID {
+		pretty.Println(bucket, developerID)
+		return nil, common.NewSingleAPIErr(401, "", "", "You do not have permission to perform this action", nil)
 	}
 
 	var mapping map[string]string
@@ -31,10 +46,8 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 		return nil, common.NewMultiAPIErr(400, "mapping error", errs)
 	}
 
-	developerID := ctx.Value(CtxIdentity).(string)
-
 	// check if an existing mapping with same name exists
-	err := s.db.Where("name = ? AND identity = ?", req.Name, developerID).First(&db.Mapping{}).Error
+	err = s.db.Where("name = ? AND identity = ?", req.Name, developerID).First(&db.Mapping{}).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, common.ServerError
 	} else if err == nil {
@@ -44,6 +57,7 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 	var newMapping = db.NewMapping()
 	newMapping.Identity = developerID
 	newMapping.Name = req.Name
+	newMapping.Bucket = req.Bucket
 	newMapping.Mapping = string(req.Mapping)
 
 	if err := s.db.Create(&newMapping).Error; err != nil {
@@ -51,8 +65,9 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 	}
 
 	return &proto_rpc.CreateMappingResponse{
-		Name: req.Name,
-		ID:   newMapping.ID,
+		Bucket: req.Bucket,
+		Name:   req.Name,
+		ID:     newMapping.ID,
 	}, nil
 }
 
@@ -74,6 +89,8 @@ func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*pr
 	}
 
 	return &proto_rpc.GetMappingResponse{
+		Bucket:  mapping.Bucket,
+		Name:    mapping.Name,
 		Mapping: util.MustStringify(mapping),
 	}, nil
 }

@@ -44,7 +44,7 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	}
 
 	// check if bucket exists
-	_, err = s.getBucket(req.Bucket, developerID)
+	_, err = s.getBucket(req.Bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +217,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	}
 
 	// check if bucket exists
-	_, err = s.getBucket(req.Bucket, developerID)
+	_, err = s.getBucket(req.Bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +383,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	}
 
 	// check if bucket exists
-	_, err = s.getBucket(req.Bucket, developerID)
+	_, err = s.getBucket(req.Bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +487,7 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 	}
 
 	// check if bucket exists
-	bucket, err := s.getBucket(req.Bucket, developerID)
+	bucket, err := s.getBucket(req.Bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -571,7 +571,6 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 	query["owner_id"] = req.Owner
 	query["creator_id"] = req.Creator
 	query["bucket"] = req.Bucket
-
 	var mapping map[string]string
 
 	// if mapping is provided in request, fetch it
