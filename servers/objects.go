@@ -276,17 +276,6 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 		}
 	}
 
-	// set creator as the developer if not set
-	if len(req.Creator) == 0 {
-		req.Creator = developerID
-	} else {
-		if _, err = s.getAccount(req.Creator); err != nil {
-			if strings.Contains(err.Error(), "account not found") {
-				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
-			}
-		}
-	}
-
 	// developer is not the owner, this action requires permission
 	// TODO: ensure auth token must be a user token from the owner
 	// and the token authorizes access to the object created by the creator for this developer
@@ -298,9 +287,8 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	var query map[string]interface{}
 	util.FromJSON(req.Query, &query)
 	mergo.Merge(&query, map[string]interface{}{
-		"owner_id":   req.Owner,
-		"creator_id": req.Creator,
-		"bucket":     req.Bucket,
+		"owner_id": req.Owner,
+		"bucket":   req.Bucket,
 	})
 
 	var mapping map[string]string
@@ -441,16 +429,6 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 		}
 	}
 
-	if len(req.Creator) == 0 {
-		req.Creator = developerID
-	} else {
-		if _, err = s.getAccount(req.Creator); err != nil {
-			if strings.Contains(err.Error(), "account not found") {
-				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
-			}
-		}
-	}
-
 	// developer is not the owner, this action requires permission
 	// TODO: ensure auth token must be a user token from the owner
 	// and the token authorizes access to the object created by the creator for this developer
@@ -458,13 +436,12 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner", nil)
 	}
 
-	// include owner, creator and bucket filters
+	// include owner and bucket filters
 	var query map[string]interface{}
 	util.FromJSON(req.Query, &query)
 	mergo.Merge(&query, map[string]interface{}{
-		"owner_id":   req.Owner,
-		"creator_id": req.Creator,
-		"bucket":     req.Bucket,
+		"owner_id": req.Owner,
+		"bucket":   req.Bucket,
 	})
 
 	var count int64
@@ -553,17 +530,6 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 		}
 	}
 
-	// set creator as the developer if not set
-	if len(req.Creator) == 0 {
-		req.Creator = developerID
-	} else {
-		if _, err = s.getAccount(req.Creator); err != nil {
-			if strings.Contains(err.Error(), "account not found") {
-				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
-			}
-		}
-	}
-
 	// developer is not the owner, this action requires permission
 	// TODO: ensure auth token must be a user token from the owner
 	// and the token authorizes access to the object created by the creator for this developer
@@ -575,9 +541,8 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 	var query map[string]interface{}
 	util.FromJSON(req.Query, &query)
 	mergo.Merge(&query, map[string]interface{}{
-		"owner_id":   req.Owner,
-		"creator_id": req.Creator,
-		"bucket":     req.Bucket,
+		"owner_id": req.Owner,
+		"bucket":   req.Bucket,
 	})
 
 	var mapping map[string]string
@@ -694,17 +659,6 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 		}
 	}
 
-	// set creator as the developer if not set
-	if len(req.Creator) == 0 {
-		req.Creator = developerID
-	} else {
-		if _, err = s.getAccount(req.Creator); err != nil {
-			if strings.Contains(err.Error(), "account not found") {
-				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
-			}
-		}
-	}
-
 	// developer is not the owner, this action requires permission
 	// TODO: ensure auth token must be a user token from the owner
 	// and the token authorizes access to the object created by the creator for this developer
@@ -716,9 +670,8 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 	var query map[string]interface{}
 	util.FromJSON(req.Query, &query)
 	mergo.Merge(&query, map[string]interface{}{
-		"owner_id":   req.Owner,
-		"creator_id": req.Creator,
-		"bucket":     req.Bucket,
+		"owner_id": req.Owner,
+		"bucket":   req.Bucket,
 	})
 
 	var mapping map[string]string

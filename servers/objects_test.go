@@ -385,20 +385,6 @@ func TestObject(t *testing.T) {
 					})
 				})
 
-				Convey("Should return error if creator does not exist", func() {
-					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Creator: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"message": "creator not found",
-						"status":  "404",
-						"field":   "creator",
-					})
-				})
-
 				Convey("Should return error if authenticated user is not the owner of the queried object", func() {
 					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Owner: account2["id"].(string)})
 					So(err, ShouldNotBeNil)
@@ -633,21 +619,6 @@ func TestObject(t *testing.T) {
 						"status":  "404",
 						"field":   "owner",
 						"message": "owner not found",
-					})
-				})
-
-				Convey("Should return error if creator is not found", func() {
-					ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
-					_, err := rpc.UpdateObjects(ctx, &proto_rpc.UpdateObjectsMsg{Bucket: b.Name, Creator: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"status":  "404",
-						"field":   "creator",
-						"message": "creator not found",
 					})
 				})
 
@@ -899,20 +870,6 @@ func TestObject(t *testing.T) {
 						"message": "owner not found",
 						"status":  "404",
 						"field":   "owner",
-					})
-				})
-
-				Convey("Should return error if creator does not exist", func() {
-					_, err := rpc.GetObjects(ctx, &proto_rpc.GetObjectMsg{Bucket: b.Name, Creator: "unknown"})
-					So(err, ShouldNotBeNil)
-					m, err := util.JSONToMap(err.Error())
-					So(err, ShouldBeNil)
-					errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
-					So(errs, ShouldHaveLength, 1)
-					So(errs[0], ShouldResemble, map[string]interface{}{
-						"message": "creator not found",
-						"status":  "404",
-						"field":   "creator",
 					})
 				})
 

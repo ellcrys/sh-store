@@ -91,10 +91,9 @@ message GetObjectMsg {
     string bucket = 1                [(gogoproto.jsontag) = "bucket,omitempty", (gogoproto.moretags) = 'structs:"bucket,omitempty" mapstructure:"bucket,omitempty"'];
     bytes query = 2                  [(gogoproto.jsontag) = "query,omitempty", (gogoproto.moretags) = 'structs:"query,omitempty" mapstructure:"query,omitempty"'];
     string owner = 3                 [(gogoproto.jsontag) = "owner,omitempty", (gogoproto.moretags) = 'structs:"owner,omitempty" mapstructure:"owner,omitempty"'];
-    string creator = 4               [(gogoproto.jsontag) = "creator,omitempty", (gogoproto.moretags) = 'structs:"creator,omitempty" mapstructure:"creator,omitempty"'];
-    repeated OrderBy order = 5       [(gogoproto.jsontag) = "order,omitempty", (gogoproto.moretags) = 'structs:"order,omitempty" mapstructure:"order,omitempty"'];
-    int32 limit = 6                  [(gogoproto.jsontag) = "limit,omitempty", (gogoproto.moretags) = 'structs:"limit,omitempty" mapstructure:"limit,omitempty"']; 
-    string mapping = 7               [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
+    repeated OrderBy order = 4       [(gogoproto.jsontag) = "order,omitempty", (gogoproto.moretags) = 'structs:"order,omitempty" mapstructure:"order,omitempty"'];
+    int32 limit = 5                  [(gogoproto.jsontag) = "limit,omitempty", (gogoproto.moretags) = 'structs:"limit,omitempty" mapstructure:"limit,omitempty"']; 
+    string mapping = 6               [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
 }
 
 // UpdateObjectsMsg represents parameters for updating objects
@@ -102,9 +101,8 @@ message UpdateObjectsMsg {
     string bucket = 1               [(gogoproto.jsontag) = "bucket,omitempty", (gogoproto.moretags) = 'structs:"bucket,omitempty" mapstructure:"bucket,omitempty"'];
     bytes query = 2                 [(gogoproto.jsontag) = "query,omitempty", (gogoproto.moretags) = 'structs:"query,omitempty" mapstructure:"query,omitempty"'];
     string owner = 3                [(gogoproto.jsontag) = "owner,omitempty", (gogoproto.moretags) = 'structs:"owner,omitempty" mapstructure:"owner,omitempty"'];
-    string creator = 4              [(gogoproto.jsontag) = "creator,omitempty", (gogoproto.moretags) = 'structs:"creator,omitempty" mapstructure:"creator,omitempty"'];
-    bytes update = 5               [(gogoproto.jsontag) = "update,omitempty", (gogoproto.moretags) = 'structs:"update,omitempty" mapstructure:"update,omitempty"'];
-    string mapping = 6              [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
+    bytes update = 4               [(gogoproto.jsontag) = "update,omitempty", (gogoproto.moretags) = 'structs:"update,omitempty" mapstructure:"update,omitempty"'];
+    string mapping = 5              [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
 }
 
 // DeleteObjects represents parameter for deleting objects
@@ -112,8 +110,7 @@ message DeleteObjectsMsg {
     string bucket = 1               [(gogoproto.jsontag) = "bucket,omitempty", (gogoproto.moretags) = 'structs:"bucket,omitempty" mapstructure:"bucket,omitempty"'];
     bytes query = 2                 [(gogoproto.jsontag) = "query,omitempty", (gogoproto.moretags) = 'structs:"query,omitempty" mapstructure:"query,omitempty"'];
     string owner = 3                [(gogoproto.jsontag) = "owner,omitempty", (gogoproto.moretags) = 'structs:"owner,omitempty" mapstructure:"owner,omitempty"'];
-    string creator = 4              [(gogoproto.jsontag) = "creator,omitempty", (gogoproto.moretags) = 'structs:"creator,omitempty" mapstructure:"creator,omitempty"'];
-    string mapping = 5              [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
+    string mapping = 4              [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
 }
 
 // AffectedResponse 

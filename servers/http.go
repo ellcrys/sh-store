@@ -425,10 +425,9 @@ func (s *HTTP) updateObjects(w http.ResponseWriter, r *http.Request) (interface{
 	var err error
 	var resp *proto_rpc.AffectedResponse
 	var body struct {
-		Query   map[string]interface{} `json:"query"`
-		Owner   string                 `json:"owner"`
-		Creator string                 `json:"creator"`
-		Update  map[string]interface{} `json:"update"`
+		Query  map[string]interface{} `json:"query"`
+		Owner  string                 `json:"owner"`
+		Update map[string]interface{} `json:"update"`
 	}
 	var md = metadata.Join(
 		metadata.Pairs("session_id", r.URL.Query().Get("session")),
@@ -445,7 +444,6 @@ func (s *HTTP) updateObjects(w http.ResponseWriter, r *http.Request) (interface{
 			Bucket:  mux.Vars(r)["bucket"],
 			Query:   util.MustStringify(body.Query),
 			Owner:   body.Owner,
-			Creator: body.Creator,
 			Update:  util.MustStringify(body.Update),
 			Mapping: r.URL.Query().Get("mapping"),
 		})
@@ -465,9 +463,8 @@ func (s *HTTP) deleteObjects(w http.ResponseWriter, r *http.Request) (interface{
 	var err error
 	var resp *proto_rpc.AffectedResponse
 	var body struct {
-		Query   map[string]interface{} `json:"query"`
-		Owner   string                 `json:"owner"`
-		Creator string                 `json:"creator"`
+		Query map[string]interface{} `json:"query"`
+		Owner string                 `json:"owner"`
 	}
 	var md = metadata.Join(
 		metadata.Pairs("session_id", r.URL.Query().Get("session")),
@@ -484,7 +481,6 @@ func (s *HTTP) deleteObjects(w http.ResponseWriter, r *http.Request) (interface{
 			Bucket:  mux.Vars(r)["bucket"],
 			Query:   util.MustStringify(body.Query),
 			Owner:   body.Owner,
-			Creator: body.Creator,
 			Mapping: r.URL.Query().Get("mapping"),
 		})
 		return err
@@ -507,11 +503,10 @@ func (s *HTTP) getObjects(w http.ResponseWriter, r *http.Request) (interface{}, 
 	var sessionID = r.URL.Query().Get("session")
 	var md = metadata.Join(metadata.Pairs("session_id", sessionID), metadata.Pairs("authorization", r.Header.Get("Authorization")))
 	var body struct {
-		Query   map[string]interface{} `json:"query"`
-		Owner   string                 `json:"owner"`
-		Creator string                 `json:"creator"`
-		Limit   int32                  `json:"limit"`
-		Order   []struct {
+		Query map[string]interface{} `json:"query"`
+		Owner string                 `json:"owner"`
+		Limit int32                  `json:"limit"`
+		Order []struct {
 			Field string `json:"field"`
 			Order int32  `json:"order"`
 		} `json:"order"`
