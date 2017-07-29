@@ -3,7 +3,7 @@ package proto_rpc;
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
 service API {
-    rpc CreateIdentity(CreateIdentityMsg) returns (GetObjectResponse);
+    rpc CreateAccount(CreateAccountMsg) returns (GetObjectResponse);
     rpc CreateBucket(CreateBucketMsg) returns (Bucket);
     rpc CreateObjects(CreateObjectsMsg) returns (GetObjectsResponse);
     rpc CreateSession(Session) returns (Session);
@@ -14,7 +14,8 @@ service API {
     rpc GetObjects(GetObjectMsg) returns (GetObjectsResponse);
     rpc CountObjects(GetObjectMsg) returns (ObjectCountResponse);
     rpc UpdateObjects(UpdateObjectsMsg) returns (AffectedResponse);
-    rpc GetIdentity(GetIdentityMsg) returns (GetObjectResponse);
+    rpc DeleteObjects(DeleteObjectsMsg) returns (AffectedResponse);
+    rpc GetAccount(GetAccountMsg) returns (GetObjectResponse);
     rpc CreateMapping(CreateMappingMsg) returns (CreateMappingResponse);
     rpc GetMapping(GetMappingMsg) returns (GetMappingResponse);
     rpc GetAllMapping(GetAllMappingMsg) returns (GetAllMappingResponse);
@@ -31,7 +32,7 @@ message Bucket {
     string ID = 1               [(gogoproto.jsontag) = "id,omitempty", (gogoproto.moretags) = 'structs:"id,omitempty" mapstructure:"id,omitempty"'];
     string name = 2             [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"'];
     bool immutable = 3          [(gogoproto.jsontag) = "immutable,omitempty", (gogoproto.moretags) = 'structs:"immutable,omitempty" mapstructure:"immutable,omitempty"'];
-    string identity = 4         [(gogoproto.jsontag) = "identity,omitempty", (gogoproto.moretags) = 'structs:"identity,omitempty" mapstructure:"immutable,omitempty"'];
+    string account = 4         [(gogoproto.jsontag) = "account,omitempty", (gogoproto.moretags) = 'structs:"account,omitempty" mapstructure:"immutable,omitempty"'];
     int64 createdAt = 5         [(gogoproto.jsontag) = "created_at,omitempty", (gogoproto.moretags) = 'structs:"created_at,omitempty" mapstructure:"created_at,omitempty"'];
 }
 
@@ -75,8 +76,8 @@ message CreateMappingResponse {
     string Name = 3             [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"'];
 }
 
-// GetIdentityMsg represents an identity request message
-message GetIdentityMsg {
+// GetAccountMsg represents an account request message
+message GetAccountMsg {
     string ID = 1   [(gogoproto.jsontag) = "id,omitempty", (gogoproto.moretags) = 'structs:"id,omitempty" mapstructure:"id,omitempty"'];
 }
 
@@ -104,6 +105,15 @@ message UpdateObjectsMsg {
     string creator = 4              [(gogoproto.jsontag) = "creator,omitempty", (gogoproto.moretags) = 'structs:"creator,omitempty" mapstructure:"creator,omitempty"'];
     bytes update = 5               [(gogoproto.jsontag) = "update,omitempty", (gogoproto.moretags) = 'structs:"update,omitempty" mapstructure:"update,omitempty"'];
     string mapping = 6              [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
+}
+
+// DeleteObjects represents parameter for deleting objects
+message DeleteObjectsMsg {
+    string bucket = 1               [(gogoproto.jsontag) = "bucket,omitempty", (gogoproto.moretags) = 'structs:"bucket,omitempty" mapstructure:"bucket,omitempty"'];
+    bytes query = 2                 [(gogoproto.jsontag) = "query,omitempty", (gogoproto.moretags) = 'structs:"query,omitempty" mapstructure:"query,omitempty"'];
+    string owner = 3                [(gogoproto.jsontag) = "owner,omitempty", (gogoproto.moretags) = 'structs:"owner,omitempty" mapstructure:"owner,omitempty"'];
+    string creator = 4              [(gogoproto.jsontag) = "creator,omitempty", (gogoproto.moretags) = 'structs:"creator,omitempty" mapstructure:"creator,omitempty"'];
+    string mapping = 5              [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
 }
 
 // AffectedResponse 
@@ -136,8 +146,8 @@ message CreateObjectsMsg {
     string mapping = 3              [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"'];
 }
 
-// CreateIdentityMsg represents an identity of a person, developer or organization
-message CreateIdentityMsg {
+// CreateAccountMsg represents an account of a person, developer or organization
+message CreateAccountMsg {
     string email = 1            [(gogoproto.jsontag) = "email,omitempty", (gogoproto.moretags) = 'structs:"email,omitempty" mapstructure:"email,omitempty"'];
     string password = 2         [(gogoproto.jsontag) = "password,omitempty", (gogoproto.moretags) = 'structs:"password,omitempty" mapstructure:"password,omitempty"'];
     bool developer = 3          [(gogoproto.jsontag) = "developer,omitempty", (gogoproto.moretags) = 'structs:"developer,omitempty" mapstructure:"developer,omitempty"'];

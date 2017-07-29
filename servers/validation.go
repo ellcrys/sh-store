@@ -12,8 +12,8 @@ import (
 	mv "github.com/ncodes/mapvalidator"
 )
 
-// validateIdentity validates an identity to be created
-func validateIdentity(req *proto_rpc.CreateIdentityMsg) []common.Error {
+// validateAccount validates an account to be created
+func validateAccount(req *proto_rpc.CreateAccountMsg) []common.Error {
 	var errs []common.Error
 	if govalidator.IsNull(req.FirstName) {
 		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "First Name is required", Field: "first_name"})
@@ -131,7 +131,7 @@ func (s *RPC) validateObjects(objs []map[string]interface{}, mapping map[string]
 	}
 
 	// check whether the owner of the objects exist
-	err := s.db.Where("id = ?", objs[0]["owner_id"]).Last(&db.Identity{}).Error
+	err := s.db.Where("id = ?", objs[0]["owner_id"]).Last(&db.Account{}).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "owner of object(s) does not exist"})

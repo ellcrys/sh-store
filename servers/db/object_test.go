@@ -37,7 +37,7 @@ func TestDB(t *testing.T) {
 		t.Fatal("failed to connect to test database")
 	}
 
-	err = db.CreateTable(&Bucket{}, &Object{}, &Identity{}).Error
+	err = db.CreateTable(&Bucket{}, &Object{}, &Account{}).Error
 	if err != nil {
 		t.Fatalf("failed to create database tables. %s", err)
 	}
@@ -57,7 +57,7 @@ func TestDB(t *testing.T) {
 		Convey(".CreateBucket", func() {
 			bucket := NewBucket()
 			bucket.Name = util.RandString(5)
-			bucket.Identity = "identity1"
+			bucket.Account = "account1"
 			bucket.Immutable = false
 			err := CreateBucket(db, bucket)
 			So(err, ShouldBeNil)

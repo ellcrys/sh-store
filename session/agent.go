@@ -32,6 +32,9 @@ var (
 	// OpUpdateObjects represents an update operation
 	OpUpdateObjects OpType = 4
 
+	// OpDeleteObjects represents a delete operation
+	OpDeleteObjects OpType = 5
+
 	// MaxSessionIdleTime is the maximum duration a session can be idle before stopping
 	MaxSessionIdleTime = 10 * time.Minute
 
@@ -292,6 +295,61 @@ func (a *Agent) update() error {
 	return err
 }
 
+// delete objects matching a query
+func (a *Agent) delete() error {
+
+	var err error
+
+	a.Lock()
+	defer a.Unlock()
+
+	if !a.began {
+		return fmt.Errorf("agent has not started. Did you call Start()?")
+	}
+
+	if a.curOp == nil {
+		return fmt.Errorf("operation object is required")
+	}
+
+	var query db.Object
+
+	// Use JSQ enabled query if op.QueryWithJSQ is set
+	if len(a.curOp.QueryWithJSQ) > 0 {
+
+		if !govalidator.IsJSON(a.curOp.QueryWithJSQ) {
+			return fmt.Errorf("query must be a json string")
+		}
+
+		jsq := jsq.NewJSQ(db.GetValidObjectFields())
+		if err := jsq.Parse(a.curOp.QueryWithJSQ); err != nil {
+			return fmt.Errorf("parser:%s", err)
+		}
+
+		sql, args, err := jsq.ToSQL()
+		if err != nil {
+			return errors.Wrap(err, "failed to generate SQL")
+		}
+
+		if a.debug {
+			logAgent.Debugf("jsq: %s %v, order: %s, limit: %d", sql, args, a.curOp.OrderBy, a.curOp.Limit)
+		}
+
+		query = db.Object{
+			QueryParams: db.QueryParams{
+				Expr: db.Expr{
+					Expr: sql,
+					Args: args,
+				},
+			},
+		}
+	} else {
+		query = *a.curOp.QueryWithObject
+	}
+
+	a.curOp.NumAffectedObjects, err = db.DeleteObjects(a.tx, &query)
+	return err
+}
+
 // Debug turns on logging
 func (a *Agent) Debug() {
 	a.debug = true
@@ -384,6 +442,10 @@ func (a *Agent) Start(endCb func()) {
 				}
 			case OpUpdateObjects:
 				if op.Error = a.update(); op.Error != nil {
+					a.rollback()
+				}
+			case OpDeleteObjects:
+				if op.Error = a.delete(); op.Error != nil {
 					a.rollback()
 				}
 			}

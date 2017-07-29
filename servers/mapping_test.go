@@ -12,19 +12,19 @@ import (
 func TestMapping(t *testing.T) {
 	setup(t, func(rpc, rpc2 *RPC) {
 		Convey("Mapping", t, func() {
-			c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
-			resp, err := rpc.CreateIdentity(context.Background(), c1)
+			c1 := &proto_rpc.CreateAccountMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
+			resp, err := rpc.CreateAccount(context.Background(), c1)
 			So(err, ShouldBeNil)
-			var identity map[string]interface{}
-			util.FromJSON(resp.Object, &identity)
+			var account map[string]interface{}
+			util.FromJSON(resp.Object, &account)
 
-			c2 := &proto_rpc.CreateIdentityMsg{FirstName: "john2", LastName: "Doe2", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
-			resp, err = rpc.CreateIdentity(context.Background(), c2)
+			c2 := &proto_rpc.CreateAccountMsg{FirstName: "john2", LastName: "Doe2", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
+			resp, err = rpc.CreateAccount(context.Background(), c2)
 			So(err, ShouldBeNil)
-			var identity2 map[string]interface{}
-			util.FromJSON(resp.Object, &identity2)
+			var account2 map[string]interface{}
+			util.FromJSON(resp.Object, &account2)
 
-			ctx := context.WithValue(context.Background(), CtxIdentity, identity["id"])
+			ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
 			b := &proto_rpc.CreateBucketMsg{Name: util.RandString(5)}
 			bucket, err := rpc.CreateBucket(ctx, b)
 			So(err, ShouldBeNil)
@@ -32,11 +32,11 @@ func TestMapping(t *testing.T) {
 			So(bucket.ID, ShouldHaveLength, 36)
 
 			Convey(".CreateMapping / .GetMapping / .GetAllMapping", func() {
-				c1 := &proto_rpc.CreateIdentityMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something"}
-				resp, err := rpc.CreateIdentity(context.Background(), c1)
+				c1 := &proto_rpc.CreateAccountMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something"}
+				resp, err := rpc.CreateAccount(context.Background(), c1)
 				So(err, ShouldBeNil)
-				var identity map[string]interface{}
-				util.FromJSON(resp.Object, &identity)
+				var account map[string]interface{}
+				util.FromJSON(resp.Object, &account)
 
 				Convey("Should return error if bucket is not provided", func() {
 					_, err := rpc.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{})
@@ -94,7 +94,7 @@ func TestMapping(t *testing.T) {
 				})
 
 				Convey("Should successfully create a mapping", func() {
-					ctx := context.WithValue(ctx, CtxIdentity, identity["id"])
+					ctx := context.WithValue(ctx, CtxAccount, account["id"])
 					b := &proto_rpc.CreateBucketMsg{Name: util.RandString(5)}
 					_, err = rpc.CreateBucket(ctx, b)
 					So(err, ShouldBeNil)

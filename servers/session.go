@@ -19,7 +19,7 @@ import (
 // CreateSession creates a new session and returns the session ID
 func (s *RPC) CreateSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
-	developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxAccount).(string)
 
 	if !govalidator.IsNull(req.ID) && !govalidator.IsUUIDv4(req.ID) {
 		return nil, common.NewSingleAPIErr(400, "", "", "id is invalid. Expected UUIDv4 value", nil)
@@ -47,7 +47,7 @@ func (s *RPC) GetSession(ctx context.Context, req *proto_rpc.Session) (*proto_rp
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
 	}
 
-	developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxAccount).(string)
 
 	// check if session exists locally
 	if sessionAgent := s.dbSession.GetAgent(req.ID); sessionAgent != nil {
@@ -69,7 +69,7 @@ func (s *RPC) GetSession(ctx context.Context, req *proto_rpc.Session) (*proto_rp
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if regItem.Meta["identity"] != developerID {
+	if regItem.Meta["account"] != developerID {
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
 	}
 
@@ -79,7 +79,7 @@ func (s *RPC) GetSession(ctx context.Context, req *proto_rpc.Session) (*proto_rp
 // DeleteSession deletes a existing database session
 func (s *RPC) DeleteSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
-	developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxAccount).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
@@ -118,7 +118,7 @@ func (s *RPC) DeleteSession(ctx context.Context, req *proto_rpc.Session) (*proto
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if item.Meta["identity"] != developerID {
+	if item.Meta["account"] != developerID {
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
 	}
 
@@ -158,7 +158,7 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.Session) (*proto
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
 	}
 
-	developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxAccount).(string)
 	sessionID := req.ID
 
 	// check if session exists locally, if so, authenticate developer and commit immediately
@@ -190,7 +190,7 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.Session) (*proto
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if item.Meta["identity"] != developerID {
+	if item.Meta["account"] != developerID {
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
 	}
 
@@ -230,7 +230,7 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.Session) (*pro
 		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
 	}
 
-	developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxAccount).(string)
 	sessionID := req.ID
 
 	// check if session exists locally, if so, authenticate developer and rollback immediately
@@ -262,7 +262,7 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.Session) (*pro
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if item.Meta["identity"] != developerID {
+	if item.Meta["account"] != developerID {
 		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
 	}
 

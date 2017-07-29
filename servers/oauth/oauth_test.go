@@ -40,7 +40,7 @@ func TestOAuth(t *testing.T) {
 		t.Fatal("failed to connect to test database")
 	}
 
-	err = dbCon.CreateTable(&db.Bucket{}, &db.Object{}, &db.Identity{}, &db.Mapping{}).Error
+	err = dbCon.CreateTable(&db.Bucket{}, &db.Object{}, &db.Account{}, &db.Mapping{}).Error
 	if err != nil {
 		t.Fatalf("failed to create database tables. %s", err)
 	}
@@ -88,10 +88,10 @@ func TestOAuth(t *testing.T) {
 
 		Convey(".getAppToken", func() {
 
-			identity := db.NewIdentity()
-			identity.ClientID = util.RandString(10)
-			identity.ClientSecret = util.RandString(10)
-			err := dbCon.Create(identity).Error
+			account := db.NewAccount()
+			account.ClientID = util.RandString(10)
+			account.ClientSecret = util.RandString(10)
+			err := dbCon.Create(account).Error
 			So(err, ShouldBeNil)
 
 			Convey("Should return error if client id is not provided in query parameter", func() {
@@ -145,7 +145,7 @@ func TestOAuth(t *testing.T) {
 			})
 
 			Convey("Should return error if client secret is invalid", func() {
-				req, err := http.NewRequest("POST", fmt.Sprintf("/token?grant_type=client_credentials&client_id=%s&client_secret=abc", identity.ClientID), nil)
+				req, err := http.NewRequest("POST", fmt.Sprintf("/token?grant_type=client_credentials&client_id=%s&client_secret=abc", account.ClientID), nil)
 				So(err, ShouldBeNil)
 				rr := httptest.NewRecorder()
 				handler := http.HandlerFunc(common.EasyHandle("POST", o.getAppToken))
@@ -162,7 +162,7 @@ func TestOAuth(t *testing.T) {
 			})
 
 			Convey("Should successfully create an app token", func() {
-				req, err := http.NewRequest("POST", fmt.Sprintf("/token?grant_type=client_credentials&client_id=%s&client_secret=%s", identity.ClientID, identity.ClientSecret), nil)
+				req, err := http.NewRequest("POST", fmt.Sprintf("/token?grant_type=client_credentials&client_id=%s&client_secret=%s", account.ClientID, account.ClientSecret), nil)
 				So(err, ShouldBeNil)
 				rr := httptest.NewRecorder()
 				handler := http.HandlerFunc(common.EasyHandle("POST", o.getAppToken))

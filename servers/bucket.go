@@ -26,7 +26,7 @@ func (s *RPC) CreateBucket(ctx context.Context, req *proto_rpc.CreateBucketMsg) 
 
 	var bucket = db.NewBucket()
 	copier.Copy(&bucket, &req)
-	bucket.Identity = ctx.Value(CtxIdentity).(string)
+	bucket.Account = ctx.Value(CtxAccount).(string)
 	if err = db.CreateBucket(s.db, bucket); err != nil {
 		return nil, common.ServerError
 	}

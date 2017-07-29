@@ -40,7 +40,7 @@ func TestAgent(t *testing.T) {
 		t.Fatal("failed to connect to test database")
 	}
 
-	err = dbCon.CreateTable(&db.Bucket{}, &db.Object{}, &db.Identity{}).Error
+	err = dbCon.CreateTable(&db.Bucket{}, &db.Object{}, &db.Account{}).Error
 	if err != nil {
 		t.Fatalf("failed to create database tables. %s", err)
 	}

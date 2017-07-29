@@ -8,7 +8,7 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/postgres" // postgres driver
 )
 
-// SystemEmail is the default system identity email
+// SystemEmail is the default system account email
 var SystemEmail = "system@ellcrys.co"
 
 // SystemBucket is the default system bucket name
@@ -22,11 +22,11 @@ func Connect(conStr string) (db *gorm.DB, err error) {
 
 // Initialize creates default tables if they haven't been created.
 func Initialize(db *gorm.DB) error {
-	if err := db.AutoMigrate(&Identity{}, &Bucket{}, &Object{}, &Mapping{}).Error; err != nil {
+	if err := db.AutoMigrate(&Account{}, &Bucket{}, &Object{}, &Mapping{}).Error; err != nil {
 		return err
 	}
 	if err := seed(db); err != nil {
-		return fmt.Errorf("failed to create system identity. %s", err)
+		return fmt.Errorf("failed to create system account. %s", err)
 	}
 	return nil
 }
@@ -34,10 +34,10 @@ func Initialize(db *gorm.DB) error {
 // Seed creates system database records
 func seed(db *gorm.DB) error {
 
-	var system Identity
+	var system Account
 
-	// create system identity if not existing
-	err := db.Where(Identity{Email: SystemEmail}).Attrs(Identity{
+	// create system account if not existing
+	err := db.Where(Account{Email: SystemEmail}).Attrs(Account{
 		FirstName: "",
 		LastName:  "",
 		Email:     SystemEmail,
@@ -46,12 +46,12 @@ func seed(db *gorm.DB) error {
 		CreatedAt: time.Now().UnixNano(),
 	}).FirstOrCreate(&system).Error
 	if err != nil {
-		return fmt.Errorf("failed to create system identity. %s", err)
+		return fmt.Errorf("failed to create system account. %s", err)
 	}
 
 	// create system bucket
 	err = db.Where(Bucket{Name: SystemBucket}).Attrs(Bucket{
-		Identity:  system.ID,
+		Account:  system.ID,
 		Name:      SystemBucket,
 		CreatedAt: time.Now().UnixNano(),
 	}).FirstOrCreate(&Bucket{}).Error

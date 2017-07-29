@@ -34,7 +34,7 @@ func TestSession(t *testing.T) {
 		t.Fatal("failed to connect to test database")
 	}
 
-	err = dbCon.CreateTable(&db.Bucket{}, &db.Object{}, &db.Identity{}).Error
+	err = dbCon.CreateTable(&db.Bucket{}, &db.Object{}, &db.Account{}).Error
 	if err != nil {
 		t.Fatalf("failed to create database tables. %s", err)
 	}
@@ -233,7 +233,7 @@ func TestSession(t *testing.T) {
 			sid := util.UUID4()
 			session := NewSession(sessionReg)
 			session.SetDB(dbCon)
-			session.CreateUnregisteredSession(sid, "identity_id")
+			session.CreateUnregisteredSession(sid, "account_id")
 
 			Convey("Should not be registered on the session registry", func() {
 				_, err := session.sessionReg.Get(sid)

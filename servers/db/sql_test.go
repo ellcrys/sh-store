@@ -34,7 +34,7 @@ func TestSQL(t *testing.T) {
 		t.Fatal("failed to connect to test database")
 	}
 
-	err = db.CreateTable(&Bucket{}, &Object{}, &Identity{}).Error
+	err = db.CreateTable(&Bucket{}, &Object{}, &Account{}).Error
 	if err != nil {
 		t.Fatalf("failed to create database tables. %s", err)
 	}
@@ -45,12 +45,12 @@ func TestSQL(t *testing.T) {
 
 	Convey("sql.go", t, func() {
 		Convey(".seed", func() {
-			Convey("Should successfully create system identity and bucket", func() {
+			Convey("Should successfully create system account and bucket", func() {
 				err := seed(db)
 				So(err, ShouldBeNil)
 
 				var count int
-				err = db.Model(Identity{}).Where("email = ?", SystemEmail).Count(&count).Error
+				err = db.Model(Account{}).Where("email = ?", SystemEmail).Count(&count).Error
 				So(err, ShouldBeNil)
 				So(count, ShouldEqual, 1)
 

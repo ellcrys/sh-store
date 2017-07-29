@@ -48,7 +48,7 @@ func setup(t *testing.T, f func(rpc, rpc2 *RPC)) {
 		t.Fatal("failed to connect to test database")
 	}
 
-	err = dbCon.CreateTable(&db.Bucket{}, &db.Object{}, &db.Identity{}, &db.Mapping{}).Error
+	err = dbCon.CreateTable(&db.Bucket{}, &db.Object{}, &db.Account{}, &db.Mapping{}).Error
 	if err != nil {
 		t.Fatalf("failed to create database tables. %s", err)
 	}

@@ -11,7 +11,7 @@ import (
 func TestInterceptor(t *testing.T) {
 	setup(t, func(rpc, rpc2 *RPC) {
 		Convey("Interceptor", t, func() {
-			Convey("Should return error if identity does not exists", func() {
+			Convey("Should return error if account does not exists", func() {
 				_, err := rpc.processAppTokenClaims(context.Background(), map[string]interface{}{
 					"id": "unknown",
 				})

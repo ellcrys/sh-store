@@ -98,7 +98,7 @@ func CountObjects(db *gorm.DB, q Query, out interface{}) error {
 	return db.Count(out).Error
 }
 
-// UpdateObjects updates an object match the query
+// UpdateObjects updates objects match the query
 func UpdateObjects(db *gorm.DB, q Query, update interface{}) (int64, error) {
 
 	qp := q.GetQueryParams()
@@ -112,5 +112,22 @@ func UpdateObjects(db *gorm.DB, q Query, update interface{}) (int64, error) {
 	}
 
 	r := db.UpdateColumns(update)
+	return r.RowsAffected, r.Error
+}
+
+// DeleteObjects deletes objects match the query
+func DeleteObjects(db *gorm.DB, q Query) (int64, error) {
+
+	qp := q.GetQueryParams()
+	db = db.Model(Object{})
+
+	// no custom expression, use full object
+	if qp == nil || len(qp.Expr.Expr) == 0 {
+		db = db.Where(q)
+	} else { // use expression and arguments
+		db = db.Where(qp.Expr.Expr, qp.Expr.Args...)
+	}
+
+	r := db.Delete(Object{})
 	return r.RowsAffected, r.Error
 }

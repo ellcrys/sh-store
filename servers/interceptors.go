@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	// CtxIdentity represents an authenticated identity
-	CtxIdentity types.CtxKey = "identity"
+	// CtxAccount represents an authenticated account
+	CtxAccount types.CtxKey = "account"
 
 	// CtxTokenClaims represents claims in an auth token
 	CtxTokenClaims types.CtxKey = "token_claims"
@@ -29,13 +29,13 @@ var (
 	// methodsNotRequiringAuth includes the full method name of methods that
 	// must not be processed by the auth interceptor
 	methodsNotRequiringAuth = []string{
-		"/proto_rpc.API/CreateIdentity",
+		"/proto_rpc.API/CreateAccount",
 	}
 
 	// methodsRequiringAppToken includes the full method name of methods that
 	// must pass app token authorization checks
 	methodsRequiringAppToken = []string{
-		"/proto_rpc.API/GetIdentity",
+		"/proto_rpc.API/GetAccount",
 		"/proto_rpc.API/CreateBucket",
 		"/proto_rpc.API/CreateObjects",
 		"/proto_rpc.API/GetObjects",
@@ -49,6 +49,7 @@ var (
 		"/proto_rpc.API/CommitSession",
 		"/proto_rpc.API/RollbackSession",
 		"/proto_rpc.API/UpdateObjects",
+		"/proto_rpc.API/DeleteObjects",
 	}
 )
 
@@ -126,12 +127,12 @@ func (s *RPC) requiresAppTokenInterceptor(ctx context.Context, req interface{}, 
 }
 
 // processAppTokenClaims checks whether a token claim is valid. It confirms the
-// the identity associated with the claim and includes the identity in the context.
+// the account associated with the claim and includes the account in the context.
 func (s *RPC) processAppTokenClaims(ctx context.Context, claims jwt.MapClaims) (context.Context, error) {
 
-	// get identity with matching client id
-	var identity db.Identity
-	if err := s.db.Where("client_id = ?", claims["id"].(string)).First(&identity).Error; err != nil {
+	// get account with matching client id
+	var account db.Account
+	if err := s.db.Where("client_id = ?", claims["id"].(string)).First(&account).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return ctx, common.NewSingleAPIErr(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
 		}
@@ -139,5 +140,5 @@ func (s *RPC) processAppTokenClaims(ctx context.Context, claims jwt.MapClaims) (
 		return nil, common.ServerError
 	}
 
-	return context.WithValue(ctx, CtxIdentity, identity.ID), nil
+	return context.WithValue(ctx, CtxAccount, account.ID), nil
 }

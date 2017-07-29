@@ -77,9 +77,9 @@ func (o *OAuth) getAppToken(w http.ResponseWriter, r *http.Request) (interface{}
 		return common.NewSingleAPIErr(400, common.CodeInvalidParam, "", "Client secret is required", nil), 400
 	}
 
-	// get the identity
-	var identity db.Identity
-	err := o.db.Where("client_id = ?", clientID).First(&identity).Error
+	// get the account
+	var account db.Account
+	err := o.db.Where("client_id = ?", clientID).First(&account).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return common.NewSingleAPIErr(400, common.CodeInvalidParam, "", "Client id or secret are invalid", nil), 401
@@ -88,7 +88,7 @@ func (o *OAuth) getAppToken(w http.ResponseWriter, r *http.Request) (interface{}
 	}
 
 	// check client secret
-	if identity.ClientSecret != clientSecret {
+	if account.ClientSecret != clientSecret {
 		return common.NewSingleAPIErr(400, common.CodeInvalidParam, "", "Client id or secret are invalid", nil), 401
 	}
 

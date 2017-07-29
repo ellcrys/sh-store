@@ -175,20 +175,20 @@ func (s *Session) Rollback(id string) {
 }
 
 // CreateSession creates a new session agent
-func (s *Session) CreateSession(id, identityID string) (string, error) {
-	return s.createSession(id, identityID, true)
+func (s *Session) CreateSession(id, accountID string) (string, error) {
+	return s.createSession(id, accountID, true)
 }
 
 // CreateUnregisteredSession creates a session that is not registered on the session registry
-func (s *Session) CreateUnregisteredSession(id, identityID string) (sid string) {
-	sid, _ = s.createSession(id, identityID, false)
+func (s *Session) CreateUnregisteredSession(id, accountID string) (sid string) {
+	sid, _ = s.createSession(id, accountID, false)
 	return
 }
 
 // createSession creates a new session. It will generate an id if
 // id param is not empty and will only register the session on the registry
 // if registered is true.
-func (s *Session) createSession(id, identityID string, registered bool) (string, error) {
+func (s *Session) createSession(id, accountID string, registered bool) (string, error) {
 
 	if len(id) > 0 && !govalidator.IsUUIDv4(id) {
 		return "", fmt.Errorf("id is invalid. Expected a UUIDv4 value")
@@ -208,13 +208,13 @@ func (s *Session) createSession(id, identityID string, registered bool) (string,
 
 	s.Lock()
 	s.agents[id] = &AgentInfo{
-		OwnerID: identityID,
+		OwnerID: accountID,
 		Agent:   agent,
 	}
 	s.Unlock()
 
 	if registered {
-		if err := s.registerSession(id, identityID); err != nil {
+		if err := s.registerSession(id, accountID); err != nil {
 			s.End(id)
 			return "", fmt.Errorf("failed to register session. %s", err)
 		}
@@ -224,7 +224,7 @@ func (s *Session) createSession(id, identityID string, registered bool) (string,
 }
 
 // registerSessionService register the session with the session registry
-func (s *Session) registerSession(sid string, identityID string) error {
+func (s *Session) registerSession(sid string, accountID string) error {
 
 	addr, port, err := getNodeAddr()
 	if err != nil {
@@ -236,7 +236,7 @@ func (s *Session) registerSession(sid string, identityID string) error {
 		Port:    port,
 		SID:     sid,
 		Meta: map[string]interface{}{
-			"identity": identityID,
+			"account": accountID,
 		},
 	})
 }
@@ -326,6 +326,25 @@ func SendUpdateOpWithSession(ses *Session, sid string, queryWithJSQ string, quer
 		QueryWithJSQ:    queryWithJSQ,
 		QueryWithObject: queryWithObj,
 		UpdateObject:    update,
+		Done:            make(chan struct{}),
+	}
+	if err := ses.SendOp(sid, op); err != nil {
+		return 0, err
+	}
+
+	return op.NumAffectedObjects, nil
+}
+
+// SendDeleteOpWithSession sends a DELETE operation using an existing session
+func SendDeleteOpWithSession(ses *Session, sid string, queryWithJSQ string, queryWithObj *db.Object) (int64, error) {
+	agent := ses.GetAgent(sid)
+	if agent == nil {
+		return 0, fmt.Errorf("session not found")
+	}
+	op := &Op{
+		OpType:          OpDeleteObjects,
+		QueryWithJSQ:    queryWithJSQ,
+		QueryWithObject: queryWithObj,
 		Done:            make(chan struct{}),
 	}
 	if err := ses.SendOp(sid, op); err != nil {

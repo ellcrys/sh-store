@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/imdario/mergo"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -35,7 +37,7 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	var err error
 	autoFinish := false
 	sessionID := util.FromIncomingMD(ctx, "session_id")
-	developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxAccount).(string)
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
@@ -112,7 +114,7 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	if len(req.Mapping) > 0 {
 
 		var m db.Mapping
-		if err = s.db.Where("name = ? AND identity = ?", req.Mapping, developerID).First(&m).Error; err != nil {
+		if err = s.db.Where("name = ? AND account = ?", req.Mapping, developerID).First(&m).Error; err != nil {
 			if autoFinish {
 				s.dbSession.RollbackEnd(sessionID)
 			}
@@ -202,12 +204,12 @@ func orderByToString(orderByList []*proto_rpc.OrderBy) string {
 	return strings.Join(s, ", ")
 }
 
-// GetObjects fetches objects belonging to an identity
+// GetObjects fetches objects belonging to an account
 func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*proto_rpc.GetObjectsResponse, error) {
 
 	var err error
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxAccount).(string)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
@@ -267,8 +269,8 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	if len(req.Owner) == 0 {
 		req.Owner = developerID
 	} else {
-		if _, err = s.getIdentity(req.Owner); err != nil {
-			if strings.Contains(err.Error(), "identity not found") {
+		if _, err = s.getAccount(req.Owner); err != nil {
+			if strings.Contains(err.Error(), "account not found") {
 				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
 			}
 		}
@@ -278,8 +280,8 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	if len(req.Creator) == 0 {
 		req.Creator = developerID
 	} else {
-		if _, err = s.getIdentity(req.Creator); err != nil {
-			if strings.Contains(err.Error(), "identity not found") {
+		if _, err = s.getAccount(req.Creator); err != nil {
+			if strings.Contains(err.Error(), "account not found") {
 				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
 			}
 		}
@@ -293,11 +295,13 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	}
 
 	// include owner, creator and bucket filters
-	var query = make(map[string]interface{})
+	var query map[string]interface{}
 	util.FromJSON(req.Query, &query)
-	query["owner_id"] = req.Owner
-	query["creator_id"] = req.Creator
-	query["bucket"] = req.Bucket
+	mergo.Merge(&query, map[string]interface{}{
+		"owner_id":   req.Owner,
+		"creator_id": req.Creator,
+		"bucket":     req.Bucket,
+	})
 
 	var mapping map[string]string
 
@@ -348,7 +352,7 @@ func (s *RPC) getRemoteConnection(ctx context.Context, developerID, authorizatio
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if sessionItem.Meta["identity"] != developerID {
+	if sessionItem.Meta["account"] != developerID {
 		return common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
 	}
 
@@ -373,7 +377,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 
 	var err error
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxAccount).(string)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
@@ -430,8 +434,8 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	if len(req.Owner) == 0 {
 		req.Owner = developerID
 	} else {
-		if _, err = s.getIdentity(req.Owner); err != nil {
-			if strings.Contains(err.Error(), "identity not found") {
+		if _, err = s.getAccount(req.Owner); err != nil {
+			if strings.Contains(err.Error(), "account not found") {
 				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
 			}
 		}
@@ -440,8 +444,8 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	if len(req.Creator) == 0 {
 		req.Creator = developerID
 	} else {
-		if _, err = s.getIdentity(req.Creator); err != nil {
-			if strings.Contains(err.Error(), "identity not found") {
+		if _, err = s.getAccount(req.Creator); err != nil {
+			if strings.Contains(err.Error(), "account not found") {
 				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
 			}
 		}
@@ -455,11 +459,13 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	}
 
 	// include owner, creator and bucket filters
-	var query = make(map[string]interface{})
+	var query map[string]interface{}
 	util.FromJSON(req.Query, &query)
-	query["owner_id"] = req.Owner
-	query["creator_id"] = req.Creator
-	query["bucket"] = req.Bucket
+	mergo.Merge(&query, map[string]interface{}{
+		"owner_id":   req.Owner,
+		"creator_id": req.Creator,
+		"bucket":     req.Bucket,
+	})
 
 	var count int64
 	if err := session.SendCountOpWithSession(s.dbSession, sessionID, req.Bucket, string(util.MustStringify(query)), nil, &count); err != nil {
@@ -477,7 +483,7 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 
 	var err error
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	developerID := ctx.Value(CtxIdentity).(string)
+	developerID := ctx.Value(CtxAccount).(string)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
@@ -492,7 +498,7 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 		return nil, err
 	}
 
-	// only mutable buckets can be updated
+	// only objects in mutable buckets can be updated
 	if bucket.Immutable {
 		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket is not mutable", nil)
 	}
@@ -540,8 +546,8 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 	if len(req.Owner) == 0 {
 		req.Owner = developerID
 	} else {
-		if _, err = s.getIdentity(req.Owner); err != nil {
-			if strings.Contains(err.Error(), "identity not found") {
+		if _, err = s.getAccount(req.Owner); err != nil {
+			if strings.Contains(err.Error(), "account not found") {
 				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
 			}
 		}
@@ -551,8 +557,8 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 	if len(req.Creator) == 0 {
 		req.Creator = developerID
 	} else {
-		if _, err = s.getIdentity(req.Creator); err != nil {
-			if strings.Contains(err.Error(), "identity not found") {
+		if _, err = s.getAccount(req.Creator); err != nil {
+			if strings.Contains(err.Error(), "account not found") {
 				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
 			}
 		}
@@ -566,11 +572,14 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 	}
 
 	// include owner, creator and bucket filters
-	var query = make(map[string]interface{})
+	var query map[string]interface{}
 	util.FromJSON(req.Query, &query)
-	query["owner_id"] = req.Owner
-	query["creator_id"] = req.Creator
-	query["bucket"] = req.Bucket
+	mergo.Merge(&query, map[string]interface{}{
+		"owner_id":   req.Owner,
+		"creator_id": req.Creator,
+		"bucket":     req.Bucket,
+	})
+
 	var mapping map[string]string
 
 	// if mapping is provided in request, fetch it
@@ -597,6 +606,136 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 	}
 
 	numAffected, err := session.SendUpdateOpWithSession(s.dbSession, sessionID, string(util.MustStringify(query)), nil, update)
+	if err != nil {
+		if strings.Contains(err.Error(), "parser") {
+			msg := strings.SplitN(err.Error(), ":", 2)[1]
+			return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "query", msg, nil)
+		}
+		return nil, common.ServerError
+	}
+
+	return &proto_rpc.AffectedResponse{
+		Affected: numAffected,
+	}, nil
+}
+
+// DeleteObjects deletes objects from a mutable bucket
+func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg) (*proto_rpc.AffectedResponse, error) {
+
+	var err error
+	authorization := util.FromIncomingMD(ctx, "authorization")
+	developerID := ctx.Value(CtxAccount).(string)
+	sessionID := util.FromIncomingMD(ctx, "session_id")
+	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
+
+	// bucket is required
+	if len(req.Bucket) == 0 {
+		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
+	}
+
+	// check if bucket exists
+	bucket, err := s.getBucket(req.Bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	// only objects in mutable buckets can be deleted
+	if bucket.Immutable {
+		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket is not mutable", nil)
+	}
+
+	// check if session exist in the in-memory session cache,
+	// use it else check if it exist on the session registry. If it does,
+	// forward the request to the associated host
+	if sessionID != "" {
+		if !s.dbSession.HasSession(sessionID) {
+
+			if checkLocalOnly {
+				return nil, fmt.Errorf("session not found")
+			}
+
+			var err error
+			var resp *proto_rpc.AffectedResponse
+			err = s.getRemoteConnection(ctx, developerID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
+				resp, err = remote.DeleteObjects(ctx, req)
+				if err != nil {
+					if grpc.ErrorDesc(err) == "session not found" {
+						return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+					}
+					return common.ServerError
+				}
+				return nil
+			})
+
+			return resp, err
+		}
+
+		// check if session is owned by the developer, if not, return permission error
+		if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
+			if sessionAgent.OwnerID != developerID {
+				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			}
+		}
+
+	} else {
+		sessionID = util.UUID4()
+		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		defer s.dbSession.CommitEnd(sessionID)
+	}
+
+	// set owner as the developer if not set
+	if len(req.Owner) == 0 {
+		req.Owner = developerID
+	} else {
+		if _, err = s.getAccount(req.Owner); err != nil {
+			if strings.Contains(err.Error(), "account not found") {
+				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
+			}
+		}
+	}
+
+	// set creator as the developer if not set
+	if len(req.Creator) == 0 {
+		req.Creator = developerID
+	} else {
+		if _, err = s.getAccount(req.Creator); err != nil {
+			if strings.Contains(err.Error(), "account not found") {
+				return nil, common.NewSingleAPIErr(404, "", "creator", "creator not found", nil)
+			}
+		}
+	}
+
+	// developer is not the owner, this action requires permission
+	// TODO: ensure auth token must be a user token from the owner
+	// and the token authorizes access to the object created by the creator for this developer
+	if developerID != req.Owner {
+		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner", nil)
+	}
+
+	// include owner, creator and bucket filters
+	var query map[string]interface{}
+	util.FromJSON(req.Query, &query)
+	mergo.Merge(&query, map[string]interface{}{
+		"owner_id":   req.Owner,
+		"creator_id": req.Creator,
+		"bucket":     req.Bucket,
+	})
+
+	var mapping map[string]string
+
+	// if mapping is provided in request, fetch it
+	if len(req.Mapping) > 0 {
+		m, err := s.getMapping(req.Mapping, developerID)
+		if err != nil {
+			return nil, err
+		}
+		util.FromJSON([]byte(m.Mapping), &mapping)
+	}
+
+	// using the mapping, convert custom mapped fields of query
+	common.UnMapFields(mapping, query)
+
+	numAffected, err := session.SendDeleteOpWithSession(s.dbSession, sessionID, string(util.MustStringify(query)), nil)
 	if err != nil {
 		if strings.Contains(err.Error(), "parser") {
 			msg := strings.SplitN(err.Error(), ":", 2)[1]
