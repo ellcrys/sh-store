@@ -30,11 +30,11 @@ var (
 	}
 )
 
-// startCmd represents the start command
-var startCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Starts an agent",
-	Long:  `Starts an agent`,
+// serverCmd represents the server command
+var serverCmd = &cobra.Command{
+	Use:   "server",
+	Short: "Start an ellcrys database server",
+	Long:  `Start an ellcrys database server`,
 	Run: func(cmd *cobra.Command, args []string) {
 
 		var log = config.MakeLogger("rpc")
@@ -66,5 +66,5 @@ var startCmd = &cobra.Command{
 }
 
 func init() {
-	RootCmd.AddCommand(startCmd)
+	RootCmd.AddCommand(serverCmd)
 }
