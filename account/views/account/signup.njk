@@ -1,0 +1,47 @@
+{% extends "layout.njk" %}
+{% block title %}Create An Account - Ellcrys{% endblock %}
+{% block bodyAttr %}class="registration"{% endblock %}
+{% block body %}
+<nav>
+    <div class="logo">
+        <img src="images/logo.svg" />
+    </div>
+</nav>
+<div class="separator"></div>
+<div class="signup-panel">
+    <h3 class="title">CREATE AN ACCOUNT</h3>
+    <div class="panel">
+        <div class="form-group row">
+            <div class="col-md-6">
+                <label for="firstName">First Name</label>
+                <input type="text" class="form-control" name="firstName" id="firstName" />
+            </div>
+            <div class="col-md-6">
+                <label for="lastName">Last Name</label>
+                <input type="text" class="form-control" name="lastName" id="lastName" />
+            </div>
+        </div>
+        <div class="form-group row">
+            <div class="col-md-6">
+                <label for="email">Email Address</label>
+                <input type="email" class="form-control" name="email" id="firstName" />
+            </div>
+            <div class="col-md-6">
+                <label for="password">Password</label>
+                <input type="password" class="form-control" name="password" id="password" />
+            </div>
+        </div>
+        <div class="form-group row">
+            <div class="col-md-6">
+                <div class="text-muted terms">By clicking “Sign Up”, you are agreeing to our terms and conditions.</div>
+                <button type="submit" class="btn btn-primary btn-signup">SIGN UP</button>
+            </div>
+            <div class="login-link col-sm-12 col-md-6 text-center text-md-right">
+               <span class="text-muted">Already have an account?</span> <span><a href="#">Log In</a></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+{% endblock %}

@@ -1,0 +1,191 @@
+html, body {
+    width: 100%;
+    height: 100%;
+}
+
+body.registration {
+     @include background(linear-gradient(to bottom right, #194466, #060D22));
+     background-repeat: no-repeat;
+     background-attachment: fixed;
+}
+    
+nav {
+    padding-bottom: 20px;
+    
+    .logo {
+        width: 113px;
+        margin: auto;
+        
+        img {
+            overflow: auto;
+            margin-top: 25px;
+        }
+    }
+}
+
+.separator {
+    height: 1px;
+    border-bottom: 1px solid #0E3A5E;
+    box-shadow: 0px 1px 10px 0px;
+}
+
+.btn-signup {
+    border-radius: 4px;
+    background-color: #18B386;
+    border-color: #18B386;
+    font-family: "Brandon Text-Medium";
+    padding-top: 13px;
+    padding-bottom: 13px;
+    font-size: 15px;
+}
+
+.signup-panel {
+    width: auto;
+    margin: auto;
+    margin-top: 30px;
+    
+    .title {
+        font-family: "Brandon Text-Medium";
+        font-weight: 300;
+        font-size: 15px;
+        display: block;
+        text-align: center;
+        color: #ffffff;
+        margin-bottom: 30px;
+    }
+    
+    .panel {
+        border-radius: 5px;
+        box-shadow: 0px 2px 2px 0px;
+        background-color: #ffffff;
+        padding: 15px;
+        margin-left: 15px;
+        margin-right: 15px;
+        margin-bottom: 50px;
+        
+        label {
+            font-weight: bold;
+            font-size: 15px;
+        }
+        
+        .terms {
+            font-family: "Brandon Text-Light";
+            margin-top: 5px;
+            font-weight: 100;
+            font-size: 15px;
+        }
+        
+        input[type="text"], input[type="password"], input[type="email"]{
+            border-radius: 0;
+            padding-top: 12px;
+            padding-bottom: 12px;
+        }
+      
+        button {
+            margin-top: 15px;
+        }
+        
+        .row div:nth-child(2) {
+            margin-top: 10px;
+        }
+        
+        .login-link{
+            border-top: 1px solid #efefef;
+            padding-top: 15px;
+            margin-top: 20px !important;
+        }
+    }
+    
+    @media (min-width: 576px) {
+    }
+    
+    @media (min-width: 768px) {
+        width: 700px;
+        
+        .panel {
+            .row div:nth-child(2) {
+                margin-top: 0;
+            }
+            
+            .login-link{
+                border-top: none;
+                padding-top: 0;
+                margin-top: 0 !important;
+            }
+        }
+    }
+}
+
+.text-panel {
+    width: auto;
+    margin: auto;
+    margin-top: 30px;
+    
+    .title {
+        font-family: "Brandon Text-Medium";
+        font-weight: 300;
+        font-size: 15px;
+        display: block;
+        text-align: center;
+        color: #ffffff;
+        margin-bottom: 30px;
+    }
+    
+    .panel {
+        border-radius: 5px;
+        box-shadow: 0px 2px 2px 0px;
+        background-color: #ffffff;
+        margin-left: 15px;
+        margin-right: 15px;
+        margin-bottom: 50px;
+        padding: 15px;
+        
+        .single-link-area{
+            border-top: 1px solid #efefef;
+            padding: 15px;
+            margin: -15px;
+            margin-top: 30px !important;
+            text-align: center;
+            
+            a {
+                color: #000000;
+                font-size: 15px;
+                text-decoration: none;
+                
+                &:hover{
+                    opacity: 0.6;
+                }
+            }
+        }
+    }
+    
+    @media (min-width: 768px) {
+        width: 500px;
+    }
+}
+
+.login-panel {
+    
+    input[type="text"], input[type="password"], input[type="email"]{
+        border-radius: 0;
+        padding-top: 12px;
+        padding-bottom: 12px;
+    }
+   
+    .forgot-pass-link{
+        a {
+            color: #5D5A5A;
+            font-size: 14px;
+            position: relative;
+            top: 10px;
+        }    
+    }
+    
+    .btn-area {
+        height: 40px;
+    }
+    
+    @media (min-width: 768px) {
+        width: 355px;
+    }
+}

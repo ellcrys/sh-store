@@ -1,0 +1,31 @@
+@font-face {
+    font-family: "Brandon Text";
+    src: url("../fonts/BrandonText-Regular.ttf"), url("../fonts/BrandonText-Regular.eot");
+}
+
+@font-face {
+    font-family: "Brandon Text-Thin";
+    src: url("../fonts/BrandonText-Thin.ttf"), url("../fonts/BrandonText-Thin.eot");
+}
+
+@font-face {
+    font-family: "Brandon Text-Light";
+    src: url("../fonts/BrandonText-Light.ttf"), url("../fonts/BrandonText-Light.eot");
+}
+
+@font-face {
+    font-family: "Brandon Text-Medium";
+    src: url("../fonts/BrandonText-Medium.ttf"), url("../fonts/BrandonText-Medium.eot");
+}
+
+@font-face {
+    font-family: "Brandon Text-Bold";
+    src: url("../fonts/BrandonText-Bold.ttf"), url("../fonts/BrandonText-Bold.eot");
+}
+
+body,
+html {
+    height: 100%;
+    font-family: "Brandon Text", Georgia, Serif;
+    font-weight: 100;
+}

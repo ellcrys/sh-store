@@ -1,0 +1,36 @@
+{% extends "layout.njk" %}
+{% block title %}Create An Account - Ellcrys{% endblock %}
+{% block bodyAttr %}class="registration"{% endblock %}
+{% block body %}
+<nav>
+    <div class="logo">
+        <img src="images/logo.svg" />
+    </div>
+</nav>
+<div class="separator"></div>
+<div class="text-panel login-panel">
+    <h3 class="title">LOG IN</h3>
+    <div class="panel">
+        <div class="form-group row">
+            <div class="col-md-12">
+                <label for="email">Email Address</label>
+                <input type="email" class="form-control" name="email" id="firstName" />
+            </div>
+        </div>
+        <div class="form-group row">
+            <div class="col-md-12">
+                <label for="password">Password</label>
+                <input type="password" class="form-control" name="password" id="password" />
+            </div>
+        </div>
+        <div class="form-group btn-area">
+            <div class="float-left"><button type="submit" class="btn btn-primary btn-signup">LOG IN</button></div>
+            <div class="float-right text-right forgot-pass-link"><a href="#">Forgot Password?</a></div>
+        </div>
+        <div class="single-link-area">
+            <span class="text-muted">Already have an account?</span> <a href="#">Sign Up</a>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
