@@ -17,10 +17,10 @@ var (
 	logRPC = config.MakeLogger("rpc")
 
 	// database name of the global patchain database
-	databaseName = util.Env("EDB_DB_NAME", "elldb_dev")
+	databaseName = util.Env("ELLDB_DB_NAME", "elldb_dev")
 
 	// sqlDBConStr connection string
-	sqlDBConStr = util.Env("EDB_SQL_CONSTR", "postgresql://root@localhost:26257/"+databaseName+"?sslmode=disable")
+	sqlDBConStr = util.Env("ELLDB_CONNECTION_STR", "postgresql://postgres@localhost:5432/"+databaseName+"?sslmode=disable")
 )
 
 // RPC defines structure for the RPC server

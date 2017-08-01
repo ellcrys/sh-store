@@ -31,7 +31,7 @@ type Bucket struct {
 	SN        int64  `json:"-" structs:"-" mapstructure:"-" gorm:"primary_key"`
 	ID        string `json:"id,omitempty" structs:"id,omitempty" mapstructure:"id,omitempty" gorm:"type:varchar(36)"`
 	Name      string `json:"name,omitempty" structs:"name,omitempty" mapstructure:"name,omitempty" gorm:"type:varchar(36)"`
-	Account  string `json:"account,omitempty" structs:"account,omitempty" mapstructure:"account,omitempty"`
+	Account   string `json:"account,omitempty" structs:"account,omitempty" mapstructure:"account,omitempty"`
 	Immutable bool   `json:"immutable,omitempty" structs:"immutable,omitempty" mapstructure:"immutable,omitempty"`
 	CreatedAt int64  `json:"created_at,omitempty" structs:"created_at,omitempty" mapstructure:"created_at,omitempty"`
 }
@@ -46,7 +46,7 @@ type Mapping struct {
 	SN        int64  `json:"-" structs:"-" mapstructure:"-" gorm:"primary_key"`
 	ID        string `json:"id,omitempty" structs:"id,omitempty" mapstructure:"id,omitempty" gorm:"type:varchar(36)"`
 	Bucket    string `json:"bucket,omitempty" structs:"bucket,omitempty" mapstructure:"bucket,omitempty"`
-	Account  string `json:"account,omitempty" structs:"account,omitempty" mapstructure:"account,omitempty"`
+	Account   string `json:"account,omitempty" structs:"account,omitempty" mapstructure:"account,omitempty"`
 	Name      string `json:"name,omitempty" structs:"name,omitempty" mapstructure:"name,omitempty" gorm:"type:varchar(36)"`
 	Mapping   string `json:"mapping,omitempty" structs:"mapping,omitempty" mapstructure:"mapping,omitempty" gorm:"type:varchar(256)"`
 	CreatedAt int64  `json:"created_at,omitempty" structs:"created_at,omitempty" mapstructure:"created_at,omitempty"`

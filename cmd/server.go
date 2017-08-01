@@ -18,12 +18,6 @@ var (
 	// address to bind HTTP server to
 	bindAddrHTTP = util.Env("ELLDB_HTTP_ADDR", "localhost:9001")
 
-	// database name of the global patchain database
-	databaseName = util.Env("ELLDB_PATCHAIN_DB_NAME", "safehold_dev")
-
-	// partitionChainConStr connection string
-	partitionChainConStr = util.Env("ELLDB_PATCHAIN_CONSTR", "postgresql://root@localhost:26257/"+databaseName+"?sslmode=disable")
-
 	// requiredEnv includes the environment variables required to start
 	requiredEnv = []string{
 		"AUTH_SECRET",
