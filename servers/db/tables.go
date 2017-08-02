@@ -8,53 +8,55 @@ import (
 
 // Account represents a entity
 type Account struct {
-	SN           int64  `json:"-" structs:"-" mapstructure:"-" gorm:"primary_key"`
-	ID           string `json:"id,omitempty" structs:"id,omitempty" mapstructure:"id,omitempty" gorm:"type:varchar(36)"`
-	FirstName    string `json:"first_name,omitempty" structs:"first_name,omitempty" mapstructure:"first_name,omitempty" gorm:""`
-	LastName     string `json:"last_name,omitempty" structs:"last_name,omitempty" mapstructure:"last_name,omitempty" gorm:""`
-	Email        string `json:"email,omitempty" structs:"email,omitempty" mapstructure:"email,omitempty" gorm:""`
-	Password     string `json:"password,omitempty" structs:"password,omitempty" mapstructure:"password,omitempty" gorm:""`
-	Developer    bool   `json:"developer,omitempty" structs:"developer,omitempty" mapstructure:"developer,omitempty" gorm:""`
-	Confirmed    bool   `json:"confirmed" structs:"confirmed,omitempty" mapstructure:"confirmed,omitempty" gorm:""`
-	ClientID     string `json:"client_id,omitempty" structs:"client_id,omitempty" mapstructure:"client_id,omitempty" gorm:""`
-	ClientSecret string `json:"client_secret,omitempty" structs:"client_secret,omitempty" mapstructure:"client_secret,omitempty" gorm:""`
-	CreatedAt    int64  `json:"created_at,omitempty" structs:"created_at,omitempty" mapstructure:"created_at,omitempty"`
+	SN               int64     `json:"-" structs:"-" mapstructure:"-" gorm:"primary_key"`
+	ID               string    `json:"id,omitempty" structs:"id,omitempty" mapstructure:"id,omitempty" gorm:"type:varchar(36)"`
+	FirstName        string    `json:"first_name,omitempty" structs:"first_name,omitempty" mapstructure:"first_name,omitempty" gorm:""`
+	LastName         string    `json:"last_name,omitempty" structs:"last_name,omitempty" mapstructure:"last_name,omitempty" gorm:""`
+	Email            string    `json:"email,omitempty" structs:"email,omitempty" mapstructure:"email,omitempty" gorm:""`
+	Password         string    `json:"password,omitempty" structs:"password,omitempty" mapstructure:"password,omitempty" gorm:""`
+	Developer        bool      `json:"developer,omitempty" structs:"developer,omitempty" mapstructure:"developer,omitempty" gorm:""`
+	Confirmed        bool      `json:"confirmed" structs:"confirmed,omitempty" mapstructure:"confirmed,omitempty" gorm:""`
+	ClientID         string    `json:"client_id,omitempty" structs:"client_id,omitempty" mapstructure:"client_id,omitempty" gorm:""`
+	ClientSecret     string    `json:"client_secret,omitempty" structs:"client_secret,omitempty" mapstructure:"client_secret,omitempty" gorm:""`
+	ConfirmationCode string    `json:"confirmation_code,omitempty" structs:"confirmation_code,omitempty" mapstructure:"confirmation_code,omitempty" gorm:""`
+	CreatedAt        time.Time `json:"created_at,omitempty" structs:"created_at,omitempty" mapstructure:"created_at,omitempty"`
+	UpdatedAt        time.Time `json:"updated_at,omitempty" structs:"updated_at,omitempty" mapstructure:"updated_at,omitempty"`
 }
 
 // NewAccount creates a new account. An ID is assigned.
 func NewAccount() *Account {
-	return &Account{ID: util.UUID4(), CreatedAt: time.Now().UnixNano()}
+	return &Account{ID: util.UUID4(), CreatedAt: time.Now().UTC()}
 }
 
 // Bucket represents a logical group for objects
 type Bucket struct {
-	SN        int64  `json:"-" structs:"-" mapstructure:"-" gorm:"primary_key"`
-	ID        string `json:"id,omitempty" structs:"id,omitempty" mapstructure:"id,omitempty" gorm:"type:varchar(36)"`
-	Name      string `json:"name,omitempty" structs:"name,omitempty" mapstructure:"name,omitempty" gorm:"type:varchar(36)"`
-	Account   string `json:"account,omitempty" structs:"account,omitempty" mapstructure:"account,omitempty"`
-	Immutable bool   `json:"immutable,omitempty" structs:"immutable,omitempty" mapstructure:"immutable,omitempty"`
-	CreatedAt int64  `json:"created_at,omitempty" structs:"created_at,omitempty" mapstructure:"created_at,omitempty"`
+	SN        int64     `json:"-" structs:"-" mapstructure:"-" gorm:"primary_key"`
+	ID        string    `json:"id,omitempty" structs:"id,omitempty" mapstructure:"id,omitempty" gorm:"type:varchar(36)"`
+	Name      string    `json:"name,omitempty" structs:"name,omitempty" mapstructure:"name,omitempty" gorm:"type:varchar(36)"`
+	Account   string    `json:"account,omitempty" structs:"account,omitempty" mapstructure:"account,omitempty"`
+	Immutable bool      `json:"immutable,omitempty" structs:"immutable,omitempty" mapstructure:"immutable,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty" structs:"created_at,omitempty" mapstructure:"created_at,omitempty"`
 }
 
 // NewBucket creates a new bucket. An ID is assigned.
 func NewBucket() *Bucket {
-	return &Bucket{ID: util.UUID4(), CreatedAt: time.Now().UnixNano()}
+	return &Bucket{ID: util.UUID4(), CreatedAt: time.Now().UTC()}
 }
 
 // Mapping represents
 type Mapping struct {
-	SN        int64  `json:"-" structs:"-" mapstructure:"-" gorm:"primary_key"`
-	ID        string `json:"id,omitempty" structs:"id,omitempty" mapstructure:"id,omitempty" gorm:"type:varchar(36)"`
-	Bucket    string `json:"bucket,omitempty" structs:"bucket,omitempty" mapstructure:"bucket,omitempty"`
-	Account   string `json:"account,omitempty" structs:"account,omitempty" mapstructure:"account,omitempty"`
-	Name      string `json:"name,omitempty" structs:"name,omitempty" mapstructure:"name,omitempty" gorm:"type:varchar(36)"`
-	Mapping   string `json:"mapping,omitempty" structs:"mapping,omitempty" mapstructure:"mapping,omitempty" gorm:"type:varchar(256)"`
-	CreatedAt int64  `json:"created_at,omitempty" structs:"created_at,omitempty" mapstructure:"created_at,omitempty"`
+	SN        int64     `json:"-" structs:"-" mapstructure:"-" gorm:"primary_key"`
+	ID        string    `json:"id,omitempty" structs:"id,omitempty" mapstructure:"id,omitempty" gorm:"type:varchar(36)"`
+	Bucket    string    `json:"bucket,omitempty" structs:"bucket,omitempty" mapstructure:"bucket,omitempty"`
+	Account   string    `json:"account,omitempty" structs:"account,omitempty" mapstructure:"account,omitempty"`
+	Name      string    `json:"name,omitempty" structs:"name,omitempty" mapstructure:"name,omitempty" gorm:"type:varchar(36)"`
+	Mapping   string    `json:"mapping,omitempty" structs:"mapping,omitempty" mapstructure:"mapping,omitempty" gorm:"type:varchar(256)"`
+	CreatedAt time.Time `json:"created_at,omitempty" structs:"created_at,omitempty" mapstructure:"created_at,omitempty"`
 }
 
 // NewMapping creates a new mapping. An ID is assigned.
 func NewMapping() *Mapping {
-	return &Mapping{ID: util.UUID4(), CreatedAt: time.Now().UnixNano()}
+	return &Mapping{ID: util.UUID4(), CreatedAt: time.Now().UTC()}
 }
 
 // Object represents a bucket object

@@ -43,7 +43,7 @@ func seed(db *gorm.DB) error {
 		Email:     SystemEmail,
 		Developer: true,
 		Confirmed: true,
-		CreatedAt: time.Now().UnixNano(),
+		CreatedAt: time.Now().UTC(),
 	}).FirstOrCreate(&system).Error
 	if err != nil {
 		return fmt.Errorf("failed to create system account. %s", err)
@@ -51,9 +51,9 @@ func seed(db *gorm.DB) error {
 
 	// create system bucket
 	err = db.Where(Bucket{Name: SystemBucket}).Attrs(Bucket{
-		Account:  system.ID,
+		Account:   system.ID,
 		Name:      SystemBucket,
-		CreatedAt: time.Now().UnixNano(),
+		CreatedAt: time.Now().UTC(),
 	}).FirstOrCreate(&Bucket{}).Error
 	if err != nil {
 		return fmt.Errorf("failed to create system bucket. %s", err)

@@ -37,6 +37,17 @@ nav {
     padding-top: 13px;
     padding-bottom: 13px;
     font-size: 15px;
+    cursor: pointer;
+    
+    &:hover {
+        background-color: #179872;
+        border-color: #179872;
+    }
+    
+    &:active {
+        background-color: #18B386;
+        border-color: #18B386;
+    }
 }
 
 .signup-panel {
@@ -187,5 +198,29 @@ nav {
     
     @media (min-width: 768px) {
         width: 355px;
+    }
+}
+
+.errorbar {
+    width: auto;
+    padding: 10px;
+    background-color: #DE2727;
+    text-align: center;
+    color: #ffffff;
+    font-size: 15px;
+    font-family: "Brandon Text";
+}
+
+.errorbar.warn {
+    background-color: #9CCC40;
+    color: #000000;
+    
+    a {
+        color: #ffffff;
+        text-decoration: none;
+    }
+    
+    a:hover {
+        opacity: 0.8;
     }
 }

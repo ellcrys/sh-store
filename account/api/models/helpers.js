@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+/**
+ * Cast a database object to sequelize.Sequelize
+ * @param {*} db
+ * @returns {sequelize.Sequelize}
+ */
+function castDB(db) {
+    return db;
+}
+exports.castDB = castDB;
+
+//# sourceMappingURL=data:application/json;charset=utf8;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbImFwaS9tb2RlbHMvaGVscGVycy50cyJdLCJuYW1lcyI6W10sIm1hcHBpbmdzIjoiOztBQUVBOzs7O0dBSUc7QUFDSCxnQkFBdUIsRUFBTztJQUMxQixNQUFNLENBQUUsRUFBMEIsQ0FBQTtBQUN0QyxDQUFDO0FBRkQsd0JBRUMiLCJmaWxlIjoiYXBpL21vZGVscy9oZWxwZXJzLmpzIiwic291cmNlc0NvbnRlbnQiOlsiaW1wb3J0ICogYXMgc2VxdWVsaXplIGZyb20gJ3NlcXVlbGl6ZSc7XG5cbi8qKlxuICogQ2FzdCBhIGRhdGFiYXNlIG9iamVjdCB0byBzZXF1ZWxpemUuU2VxdWVsaXplXG4gKiBAcGFyYW0geyp9IGRiIFxuICogQHJldHVybnMge3NlcXVlbGl6ZS5TZXF1ZWxpemV9IFxuICovXG5leHBvcnQgZnVuY3Rpb24gY2FzdERCKGRiOiBhbnkpOiBzZXF1ZWxpemUuU2VxdWVsaXplIHtcbiAgICByZXR1cm4gKGRiIGFzIHNlcXVlbGl6ZS5TZXF1ZWxpemUpXG59Il19

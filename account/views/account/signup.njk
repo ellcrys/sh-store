@@ -2,44 +2,51 @@
 {% block title %}Create An Account - Ellcrys{% endblock %}
 {% block bodyAttr %}class="registration"{% endblock %}
 {% block body %}
+{% set form = req.flash("form")[0] or {} %}
+{% set error = req.flash("error") %}
+{% set field = req.flash("field") %}
+{% if error.length %}<div class="errorbar">{{ error }}</div>{% endif %}
+
 <nav>
     <div class="logo">
-        <img src="images/logo.svg" />
+        <img src="/images/logo.svg" />
     </div>
 </nav>
 <div class="separator"></div>
 <div class="signup-panel">
     <h3 class="title">CREATE AN ACCOUNT</h3>
     <div class="panel">
-        <div class="form-group row">
-            <div class="col-md-6">
-                <label for="firstName">First Name</label>
-                <input type="text" class="form-control" name="firstName" id="firstName" />
+        <form action="{{ req.originalUrl }}" method="post">
+            <div class="form-group row">
+                <div class="col-md-6">
+                    <label for="first_name">First Name</label>
+                    <input type="text" class="form-control {{req.helpers.eqlThenReturn('first_name', field, 'input-danger')}}" name="first_name" id="first_name" value="{{ form.first_name }}" />
+                </div>
+                <div class="col-md-6">
+                    <label for="last_name">Last Name</label>
+                    <input type="text" class="form-control {{req.helpers.eqlThenReturn('last_name', field, 'input-danger')}}" name="last_name" id="last_name" value="{{ form.last_name }}" />
+                </div>
             </div>
-            <div class="col-md-6">
-                <label for="lastName">Last Name</label>
-                <input type="text" class="form-control" name="lastName" id="lastName" />
+            <div class="form-group row">
+                <div class="col-md-6">
+                    <label for="email">Email Address</label>
+                    <input type="email" class="form-control {{req.helpers.eqlThenReturn('email', field, 'input-danger')}}" name="email" id="email" value="{{ form.email }}" />
+                </div>
+                <div class="col-md-6">
+                    <label for="password">Password</label>
+                    <input type="password" class="form-control {{req.helpers.eqlThenReturn('password', field, 'input-danger')}}" name="password" id="password" value="{{ form.password }}" />
+                </div>
             </div>
-        </div>
-        <div class="form-group row">
-            <div class="col-md-6">
-                <label for="email">Email Address</label>
-                <input type="email" class="form-control" name="email" id="firstName" />
+            <div class="form-group row">
+                <div class="col-md-6">
+                    <div class="text-muted terms">By clicking “Sign Up”, you are agreeing to our terms and conditions.</div>
+                    <button type="submit" class="btn btn-primary btn-signup">SIGN UP</button>
+                </div>
+                <div class="login-link col-sm-12 col-md-6 text-center text-md-right">
+                <span class="text-muted">Already have an account?</span> <span><a href="/login">Log In</a></span>
+                </div>
             </div>
-            <div class="col-md-6">
-                <label for="password">Password</label>
-                <input type="password" class="form-control" name="password" id="password" />
-            </div>
-        </div>
-        <div class="form-group row">
-            <div class="col-md-6">
-                <div class="text-muted terms">By clicking “Sign Up”, you are agreeing to our terms and conditions.</div>
-                <button type="submit" class="btn btn-primary btn-signup">SIGN UP</button>
-            </div>
-            <div class="login-link col-sm-12 col-md-6 text-center text-md-right">
-               <span class="text-muted">Already have an account?</span> <span><a href="#">Log In</a></span>
-            </div>
-        </div>
+        </form>
     </div>
 </div>
 

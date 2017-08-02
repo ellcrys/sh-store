@@ -19,10 +19,18 @@
 * For more information on configuring custom routes, check out:
 * http://sailsjs.org/#!/documentation/concepts/Routes/RouteTargetSyntax.html
 */
-
 module.exports.routes = {
-	'/': {view: 'index'},
-	'get /signup': { view: 'account/signup' },
-	'get /confirm': { view: 'account/confirmation-sent' },
-	'get /login': { view: 'account/login' }
+    '/': { view: 'index' },
+    'get /signup': { view: 'account/signup' },
+    'post /signup': 'AccountController.signup',
+    'get /confirm': { view: 'account/confirmation' },
+    'get /login': { view: 'account/login' },
+    'post /login': 'AccountController.login',
+    'get /account/verification/:code': 'AccountController.verify',
+    'get /account/resend_code/:id': 'AccountController.resendConfirmation'
 };
+
+
+
+
+

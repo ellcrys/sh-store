@@ -6480,6 +6480,13 @@ html {
   font-family: "Brandon Text", Georgia, Serif;
   font-weight: 100; }
 
+.input-danger {
+  border-color: #d9534f; }
+
+.bg-none {
+  background: none;
+  background-color: none; }
+
 html, body {
   width: 100%;
   height: 100%; }
@@ -6515,7 +6522,14 @@ nav {
   font-family: "Brandon Text-Medium";
   padding-top: 13px;
   padding-bottom: 13px;
-  font-size: 15px; }
+  font-size: 15px;
+  cursor: pointer; }
+  .btn-signup:hover {
+    background-color: #179872;
+    border-color: #179872; }
+  .btn-signup:active {
+    background-color: #18B386;
+    border-color: #18B386; }
 
 .signup-panel {
   width: auto;
@@ -6620,3 +6634,21 @@ nav {
 @media (min-width: 768px) {
   .login-panel {
     width: 355px; } }
+
+.errorbar {
+  width: auto;
+  padding: 10px;
+  background-color: #DE2727;
+  text-align: center;
+  color: #ffffff;
+  font-size: 15px;
+  font-family: "Brandon Text"; }
+
+.errorbar.warn {
+  background-color: #9CCC40;
+  color: #000000; }
+  .errorbar.warn a {
+    color: #ffffff;
+    text-decoration: none; }
+  .errorbar.warn a:hover {
+    opacity: 0.8; }

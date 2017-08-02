@@ -1,0 +1,21 @@
+{% extends "layout.njk" %}
+{% block title %}Create An Account - Ellcrys{% endblock %}
+{% block bodyAttr %}class="registration"{% endblock %}
+{% block body %}
+<nav>
+    <div class="logo">
+        <img src="/images/logo.svg" />
+    </div>
+</nav>
+<div class="separator"></div>
+<div class="text-panel">
+    <h3 class="title">ACCOUNT CREATED</h3>
+    <div class="panel">
+        You account has been created. A confirmation message was sent to your email. 
+        <div class="single-link-area">
+            <a href="/login">PROCEED TO LOGIN</a>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "layout.njk" %}
+{% block title %}Create An Account - Ellcrys{% endblock %}
+{% block bodyAttr %}class="registration"{% endblock %}
+{% block body %}
+{% set error = req.flash("error") %}
+{% set msg = req.flash("msg") %}
+
+
+<nav>
+    <div class="logo">
+        <img src="/images/logo.svg" />
+    </div>
+</nav>
+<div class="separator"></div>
+<div class="text-panel">
+    {% if not error.length %}
+        <div class="panel text-center">
+            {{ msg }}
+            <div class="single-link-area">
+                <a href="/login">PROCEED TO LOGIN</a>
+            </div>
+        </div>
+    {% else %}
+        <div class="panel bg-none alert alert-danger text-center">
+            {{ error }}
+        </div>
+    {% endif %}
+</div>
+
+{% endblock %}
