@@ -6480,6 +6480,11 @@ html {
   font-family: "Brandon Text", Georgia, Serif;
   font-weight: 100; }
 
+input[type="text"], input[type="password"], input[type="email"] {
+  border-radius: 2px;
+  padding-top: 10px;
+  padding-bottom: 10px; }
+
 .input-danger {
   border-color: #d9534f; }
 
@@ -6559,10 +6564,6 @@ nav {
       margin-top: 5px;
       font-weight: 100;
       font-size: 15px; }
-    .signup-panel .panel input[type="text"], .signup-panel .panel input[type="password"], .signup-panel .panel input[type="email"] {
-      border-radius: 0;
-      padding-top: 12px;
-      padding-bottom: 12px; }
     .signup-panel .panel button {
       margin-top: 15px; }
     .signup-panel .panel .row div:nth-child(2) {

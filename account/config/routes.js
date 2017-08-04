@@ -27,7 +27,11 @@ module.exports.routes = {
     'get /login': { view: 'account/login' },
     'post /login': 'AccountController.login',
     'get /account/verification/:code': 'AccountController.verify',
-    'get /account/resend_code/:id': 'AccountController.resendConfirmation'
+    'get /account/resend_code/:id': 'AccountController.resendConfirmation',
+    'get /account/forgot-password': { view: 'account/forgot_password' },
+    'post /account/forgot-password': 'AccountController.forgotPassword',
+    'get /account/reset-password/:token': 'AccountController.resetPasswordPage',
+    'post /account/reset-password/:token': 'AccountController.resetPassword'
 };
 
 

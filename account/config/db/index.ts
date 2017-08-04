@@ -40,6 +40,13 @@ export function defineModels(sequelize: Sequelize.Sequelize): Promise<any> {
         client_secret: { type: Sequelize.STRING },
         confirmation_code: { type: Sequelize.STRING }
     }, { underscored: true })
+    
+    sequelize.define('reset_token', {
+        id: { type: Sequelize.BIGINT, primaryKey: true, autoIncrement: true },
+        account: { type: Sequelize.STRING },
+        token: { type: Sequelize.STRING },
+        used: { type: Sequelize.BOOLEAN, defaultValue: false }
+    }, { underscored: true })
 
     return sequelize.sync({})
 }

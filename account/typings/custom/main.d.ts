@@ -33,4 +33,5 @@ interface ValidationError {
 
 declare namespace EmailService {
     function sendAccountConfirmation(to: string, data: any): Promise<any>
+    function sendPasswordResetEmail(to: string, data: any): Promise<any>
 }
