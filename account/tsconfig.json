@@ -4,9 +4,11 @@
         "module": "commonjs",
         "sourceMap": true,
         "allowJs": true,
-        "noImplicitAny": false
+        "noImplicitAny": false,
+        "declaration": false
     },
     "exclude": [
-        "node_modules"
+        "node_modules",
+        "config"
     ]
 }

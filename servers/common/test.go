@@ -2,7 +2,7 @@ package common
 
 import (
 	"database/sql"
-	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/ellcrys/util"
@@ -15,16 +15,14 @@ func OpenDB(conStr string) (db *sql.DB, err error) {
 }
 
 // CreateRandomDB creates a random database. Returns the database name.
-func CreateRandomDB(con *sql.DB) (string, error) {
-	dbName := util.RandString(5)
-	_, err := con.Query(fmt.Sprintf("CREATE DATABASE %s;", dbName))
-	return dbName, err
+func CreateRandomDB() (string, error) {
+	dbName := "test_" + util.RandString(5)
+	return dbName, exec.Command("createdb", dbName).Run()
 }
 
 // DropDB drops a database
-func DropDB(con *sql.DB, dbName string) error {
-	_, err := con.Exec(fmt.Sprintf("DROP DATABASE %s;", dbName))
-	return err
+func DropDB(dbName string) error {
+	return exec.Command("dropdb", dbName).Run()
 }
 
 // ClearTable truncates tables

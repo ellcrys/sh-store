@@ -8,7 +8,6 @@ import (
 	"github.com/ellcrys/elldb/servers/proto_rpc"
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/gorm"
-	"github.com/kr/pretty"
 	"golang.org/x/net/context"
 )
 
@@ -23,39 +22,38 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 	}
 
 	if len(req.Bucket) == 0 {
-		return nil, common.NewSingleAPIErr(400, "", "", "bucket is required", nil)
+		return nil, common.Error(400, "", "", "bucket is required")
 	}
 
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 
 	bucket, err := s.getBucket(req.Bucket)
 	if err != nil {
 		return nil, err
-	} else if bucket.Account != developerID {
-		pretty.Println(bucket, developerID)
-		return nil, common.NewSingleAPIErr(401, "", "", "You do not have permission to perform this action", nil)
+	} else if bucket.Creator != contract.ID {
+		return nil, common.Error(401, "", "", "You do not have permission to perform this action")
 	}
 
 	var mapping map[string]string
 	if err := util.FromJSON(req.Mapping, &mapping); err != nil {
-		return nil, common.NewSingleAPIErr(400, "", "", "malformed mapping", nil)
+		return nil, common.Error(400, "", "", "malformed mapping")
 	}
 
 	errs := validateMapping(mapping)
 	if len(errs) > 0 {
-		return nil, common.NewMultiAPIErr(400, "mapping error", errs)
+		return nil, common.Errors(400, errs)
 	}
 
 	// check if an existing mapping with same name exists
-	err = s.db.Where("name = ? AND account = ?", req.Name, developerID).First(&db.Mapping{}).Error
+	err = s.db.Where("name = ? AND account = ?", req.Name, contract.ID).First(&db.Mapping{}).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, common.ServerError
 	} else if err == nil {
-		return nil, common.NewSingleAPIErr(400, "", "", fmt.Sprintf("mapping with name '%s' already exist", req.Name), nil)
+		return nil, common.Error(400, "", "", fmt.Sprintf("mapping with name '%s' already exist", req.Name))
 	}
 
 	var newMapping = db.NewMapping()
-	newMapping.Account = developerID
+	newMapping.Creator = contract.ID
 	newMapping.Name = req.Name
 	newMapping.Bucket = req.Bucket
 	newMapping.Mapping = string(req.Mapping)
@@ -75,15 +73,15 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*proto_rpc.GetMappingResponse, error) {
 
 	if len(req.Name) == 0 {
-		return nil, common.NewSingleAPIErr(400, "", "id", "name is required", nil)
+		return nil, common.Error(400, "", "/id", "name is required")
 	}
 
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 
 	var mapping db.Mapping
-	if err := s.db.Where("name = ? AND account = ?", req.Name, developerID).Last(&mapping).Error; err != nil {
+	if err := s.db.Where("name = ? AND account = ?", req.Name, contract.ID).Last(&mapping).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, common.NewSingleAPIErr(404, "", "", "mapping not found", nil)
+			return nil, common.Error(404, "", "", "mapping not found")
 		}
 		return nil, common.ServerError
 	}
@@ -98,14 +96,14 @@ func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*pr
 // GetAllMapping fetches the most recent mappings belonging to the logged in developer
 func (s *RPC) GetAllMapping(ctx context.Context, req *proto_rpc.GetAllMappingMsg) (*proto_rpc.GetAllMappingResponse, error) {
 
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 
 	if req.Limit == 0 || req.Limit > MaxGetAllMappingLimit {
 		req.Limit = MaxGetAllMappingLimit
 	}
 
 	var mappings []db.Mapping
-	if err := s.db.Where("account = ?", developerID).Order("created_at DESC").Limit(req.Limit).Find(&mappings).Error; err != nil {
+	if err := s.db.Where("account = ?", contract.ID).Order("created_at DESC").Limit(req.Limit).Find(&mappings).Error; err != nil {
 		return nil, common.ServerError
 	}
 
@@ -119,7 +117,7 @@ func (s *RPC) getMapping(name, account string) (*db.Mapping, error) {
 	var m db.Mapping
 	if err := s.db.Where("name = ? AND account = ?", name, account).First(&m).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, common.NewSingleAPIErr(404, common.CodeInvalidParam, "mapping", "mapping not found", nil)
+			return nil, common.Error(404, common.CodeInvalidParam, "", "mapping not found")
 		}
 		return nil, common.ServerError
 	}

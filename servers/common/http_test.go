@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/ellcrys/util"
+
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -22,7 +24,12 @@ func TestHTTPCommon(t *testing.T) {
 				}))
 				handler.ServeHTTP(rr, req)
 				So(rr.Code, ShouldEqual, 404)
-				So(rr.Body.String(), ShouldContainSubstring, `{"status":"404","code":"unsupported_method","message":"method not supported for this endpoint"}`)
+				m, _ := util.JSONToMap(rr.Body.String())
+				So(m, ShouldResemble, map[string]interface{}{
+					"code":    "unsupported_method",
+					"message": "method not supported for this endpoint",
+					"status":  "404",
+				})
 			})
 
 			Convey("Should return json body for APIError", func() {
@@ -30,12 +37,21 @@ func TestHTTPCommon(t *testing.T) {
 				So(err, ShouldBeNil)
 				rr := httptest.NewRecorder()
 				handler := http.HandlerFunc(EasyHandle("GET", func(w http.ResponseWriter, r *http.Request) (interface{}, int) {
-					return NewSingleAPIErr(200, "some_code", "field_name", "some text", nil), 0
+					return Error(200, "some_code", "field_name", "some text"), 0
 				}))
 				handler.ServeHTTP(rr, req)
 				So(rr.Code, ShouldEqual, 200)
 				So(rr.HeaderMap["Content-Type"][0], ShouldEqual, "application/json")
-				So(rr.Body.String(), ShouldContainSubstring, `{"errors":[{"status":"200","code":"some_code","field":"field_name","message":"some text"}]}`)
+				m, _ := util.JSONToMap(rr.Body.String())
+				So(m, ShouldContainKey, "errors")
+				errs := m["errors"].([]interface{})
+				So(errs, ShouldHaveLength, 1)
+				So(errs[0], ShouldResemble, map[string]interface{}{
+					"status": "200",
+					"code":   "some_code",
+					"source": "field_name",
+					"detail": "some text",
+				})
 			})
 
 			Convey("Should return string if response is an error whose message is not a json string", func() {

@@ -36,9 +36,16 @@ export function defineModels(sequelize: Sequelize.Sequelize): Promise<any> {
         password: { type: Sequelize.STRING },
         developer: { type: Sequelize.BOOLEAN, defaultValue: false },
         confirmed: { type: Sequelize.BOOLEAN, defaultValue: false },
+        confirmation_code: { type: Sequelize.STRING }
+    }, { underscored: true })
+    
+    sequelize.define('contract', {
+        sn: { type: Sequelize.BIGINT, primaryKey: true, autoIncrement: true },
+        id: { type: Sequelize.STRING },
+        creator: { type: Sequelize.STRING },
+        name: { type: Sequelize.STRING },
         client_id: { type: Sequelize.STRING },
         client_secret: { type: Sequelize.STRING },
-        confirmation_code: { type: Sequelize.STRING }
     }, { underscored: true })
     
     sequelize.define('reset_token', {

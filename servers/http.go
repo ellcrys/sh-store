@@ -10,7 +10,6 @@ import (
 
 	"github.com/ellcrys/cocoon/core/config"
 	"github.com/ellcrys/elldb/servers/common"
-	"github.com/ellcrys/elldb/servers/oauth"
 	"github.com/ellcrys/elldb/servers/proto_rpc"
 	"github.com/ellcrys/util"
 	"github.com/fatih/structs"
@@ -29,14 +28,12 @@ var logHTTP = config.MakeLogger("http")
 // that provides REST API services.
 type HTTP struct {
 	rpcServerAddr string
-	oauth         *oauth.OAuth
 }
 
 // NewHTTP creates an new http server instance
 func NewHTTP(rpcServerAddr string, db *gorm.DB) *HTTP {
 	return &HTTP{
 		rpcServerAddr: rpcServerAddr,
-		oauth:         oauth.NewOAuth(db),
 	}
 }
 
@@ -44,13 +41,12 @@ func NewHTTP(rpcServerAddr string, db *gorm.DB) *HTTP {
 func (s *HTTP) getRouter() *mux.Router {
 	r := mux.NewRouter()
 
-	// oauth endpoints
-	r.HandleFunc("/token", common.EasyHandle(http.MethodPost, s.oauth.GetToken))
+	// auth endpoints
 	g := r.PathPrefix("/v1").Subrouter()
 
 	// v1 endpoints
+	g.HandleFunc("/contracts", common.EasyHandle(http.MethodPost, s.createContract))
 	g.HandleFunc("/buckets", common.EasyHandle(http.MethodPost, s.createBucket))
-	g.HandleFunc("/accounts", common.EasyHandle(http.MethodPost, s.createAccount))
 	g.HandleFunc("/buckets/{bucket}/objects", common.EasyHandle(http.MethodPost, s.createObjects)).Methods(http.MethodPost)
 	g.HandleFunc("/buckets/{bucket}/objects/query", common.EasyHandle(http.MethodPost, s.getObjects)).Methods(http.MethodPost)
 	g.HandleFunc("/buckets/{bucket}/objects/count", common.EasyHandle(http.MethodPost, s.countObjects)).Methods(http.MethodPost)
@@ -108,6 +104,29 @@ func (s *HTTP) Start(addr string, startedCB func(*HTTP)) error {
 	})
 
 	return http.ListenAndServe(addr, s.getRouter())
+}
+
+// createContract creates a contract
+func (s *HTTP) createContract(w http.ResponseWriter, r *http.Request) (interface{}, int) {
+	var err error
+	var body proto_rpc.CreateContractMsg
+	var resp *proto_rpc.Contract
+
+	if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return common.BodyMalformedError, 400
+	}
+
+	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
+		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
+		ctx := metadata.NewContext(context.Background(), md)
+		resp, err = client.CreateContract(ctx, &body)
+		return err
+	}); err != nil {
+		log.Errorf("%+v", err)
+		return err, 0
+	}
+
+	return resp, 201
 }
 
 // createBucket creates a bucket
@@ -235,31 +254,6 @@ func (s *HTTP) rollbackSession(w http.ResponseWriter, r *http.Request) (interfac
 	}
 
 	return resp, 200
-}
-
-// createAccount creates an account
-func (s *HTTP) createAccount(w http.ResponseWriter, r *http.Request) (interface{}, int) {
-
-	var err error
-	var body proto_rpc.CreateAccountMsg
-	var resp *proto_rpc.GetObjectResponse
-
-	if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return common.BodyMalformedError, 400
-	}
-
-	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
-		resp, err = client.CreateAccount(context.Background(), &body)
-		return err
-	}); err != nil {
-		log.Errorf("%+v", err)
-		return err, 0
-	}
-
-	var account map[string]interface{}
-	util.FromJSON2(resp.Object, &account)
-
-	return common.SingleObjectResp("account", account), 201
 }
 
 // createMapping creates a mapping for an account

@@ -10,6 +10,7 @@ import (
 
 	"github.com/asaskevich/govalidator"
 	"github.com/ellcrys/elldb/servers/common"
+	"github.com/ellcrys/elldb/servers/db"
 	"github.com/ellcrys/elldb/servers/proto_rpc"
 	"github.com/ellcrys/elldb/session"
 	"github.com/ellcrys/util"
@@ -19,20 +20,20 @@ import (
 // CreateSession creates a new session and returns the session ID
 func (s *RPC) CreateSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 
 	if !govalidator.IsNull(req.ID) && !govalidator.IsUUIDv4(req.ID) {
-		return nil, common.NewSingleAPIErr(400, "", "", "id is invalid. Expected UUIDv4 value", nil)
+		return nil, common.Error(400, "", "", "id is invalid. Expected UUIDv4 value")
 	}
 
 	if len(req.ID) == 0 {
 		req.ID = util.UUID4()
 	}
 
-	sessionID, err := s.dbSession.CreateSession(req.ID, developerID)
+	sessionID, err := s.dbSession.CreateSession(req.ID, contract.ID)
 	if err != nil {
 		logRPC.Errorf("%+v", err)
-		return nil, common.NewSingleAPIErr(500, "", "", "session not created", nil)
+		return nil, common.Error(500, "", "", "session not created")
 	}
 
 	return &proto_rpc.Session{
@@ -44,17 +45,17 @@ func (s *RPC) CreateSession(ctx context.Context, req *proto_rpc.Session) (*proto
 func (s *RPC) GetSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
 	if req.ID == "" {
-		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
+		return nil, common.Error(400, "", "", "session id is required")
 	}
 
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 
 	// check if session exists locally
 	if sessionAgent := s.dbSession.GetAgent(req.ID); sessionAgent != nil {
 
 		// check if session is owned by the developer, if not, return permission error
-		if sessionAgent.OwnerID != developerID {
-			return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+		if sessionAgent.OwnerID != contract.ID {
+			return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 		}
 
 		return req, nil
@@ -64,13 +65,13 @@ func (s *RPC) GetSession(ctx context.Context, req *proto_rpc.Session) (*proto_rp
 	regItem, err := s.sessionReg.Get(req.ID)
 	if err != nil {
 		if err == session.ErrNotFound {
-			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			return nil, common.Error(404, "", "", "session not found")
 		}
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if regItem.Meta["account"] != developerID {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+	if regItem.Meta["contract_id"] != contract.ID {
+		return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 	}
 
 	return req, nil
@@ -79,12 +80,12 @@ func (s *RPC) GetSession(ctx context.Context, req *proto_rpc.Session) (*proto_rp
 // DeleteSession deletes a existing database session
 func (s *RPC) DeleteSession(ctx context.Context, req *proto_rpc.Session) (*proto_rpc.Session, error) {
 
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	if req.ID == "" {
-		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
+		return nil, common.Error(400, "", "", "session id is required")
 	}
 
 	sessionID := req.ID
@@ -93,8 +94,8 @@ func (s *RPC) DeleteSession(ctx context.Context, req *proto_rpc.Session) (*proto
 	if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
 
 		// check if session is owned by the developer, if not, return permission error
-		if sessionAgent.OwnerID != developerID {
-			return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+		if sessionAgent.OwnerID != contract.ID {
+			return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 		}
 
 		s.dbSession.End(sessionID)
@@ -112,14 +113,14 @@ func (s *RPC) DeleteSession(ctx context.Context, req *proto_rpc.Session) (*proto
 	item, err := s.sessionReg.Get(sessionID)
 	if err != nil {
 		if err == session.ErrNotFound {
-			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			return nil, common.Error(404, "", "", "session not found")
 		}
 		return nil, common.ServerError
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if item.Meta["account"] != developerID {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+	if item.Meta["contract_id"] != contract.ID {
+		return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 	}
 
 	sessionHostAddr := net.JoinHostPort(item.Address, strconv.Itoa(item.Port))
@@ -138,7 +139,7 @@ func (s *RPC) DeleteSession(ctx context.Context, req *proto_rpc.Session) (*proto
 	resp, err := server.DeleteSession(ctx, req)
 	if err != nil {
 		if grpc.ErrorDesc(err) == "session not found" {
-			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			return nil, common.Error(404, "", "", "session not found")
 		}
 		logRPC.Errorf("%+v", err)
 		return nil, common.ServerError
@@ -155,18 +156,18 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.Session) (*proto
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	if req.ID == "" {
-		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
+		return nil, common.Error(400, "", "", "session id is required")
 	}
 
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 	sessionID := req.ID
 
 	// check if session exists locally, if so, authenticate developer and commit immediately
 	if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
 
 		// check if session is owned by the developer, if not, return permission error
-		if sessionAgent.OwnerID != developerID {
-			return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+		if sessionAgent.OwnerID != contract.ID {
+			return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 		}
 
 		s.dbSession.Commit(sessionID)
@@ -184,14 +185,14 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.Session) (*proto
 	item, err := s.sessionReg.Get(sessionID)
 	if err != nil {
 		if err == session.ErrNotFound {
-			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			return nil, common.Error(404, "", "", "session not found")
 		}
 		return nil, common.ServerError
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if item.Meta["account"] != developerID {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+	if item.Meta["contract_id"] != contract.ID {
+		return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 	}
 
 	sessionHostAddr := net.JoinHostPort(item.Address, strconv.Itoa(item.Port))
@@ -210,7 +211,7 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.Session) (*proto
 	resp, err := server.CommitSession(ctx, req)
 	if err != nil {
 		if grpc.ErrorDesc(err) == "session not found" {
-			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			return nil, common.Error(404, "", "", "session not found")
 		}
 		logRPC.Errorf("%+v", err)
 		return nil, common.ServerError
@@ -227,18 +228,18 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.Session) (*pro
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	if req.ID == "" {
-		return nil, common.NewSingleAPIErr(400, "", "", "session id is required", nil)
+		return nil, common.Error(400, "", "", "session id is required")
 	}
 
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 	sessionID := req.ID
 
 	// check if session exists locally, if so, authenticate developer and rollback immediately
 	if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
 
 		// check if session is owned by the developer, if not, return permission error
-		if sessionAgent.OwnerID != developerID {
-			return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+		if sessionAgent.OwnerID != contract.ID {
+			return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 		}
 
 		s.dbSession.Rollback(sessionID)
@@ -256,14 +257,14 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.Session) (*pro
 	item, err := s.sessionReg.Get(sessionID)
 	if err != nil {
 		if err == session.ErrNotFound {
-			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			return nil, common.Error(404, "", "", "session not found")
 		}
 		return nil, common.ServerError
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if item.Meta["account"] != developerID {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+	if item.Meta["contract_id"] != contract.ID {
+		return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 	}
 
 	sessionHostAddr := net.JoinHostPort(item.Address, strconv.Itoa(item.Port))
@@ -282,7 +283,7 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.Session) (*pro
 	resp, err := server.RollbackSession(ctx, req)
 	if err != nil {
 		if grpc.ErrorDesc(err) == "session not found" {
-			return nil, common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			return nil, common.Error(404, "", "", "session not found")
 		}
 		logRPC.Errorf("%+v", err)
 		return nil, common.ServerError

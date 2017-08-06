@@ -32,7 +32,7 @@ function setFlashError(req: any, msg: string, field: string, body: any) {
  * @param {Account} account 
  * @returns {ValidationError} 
  */
-export function validateAccount(account: Account): ValidationError {
+export function validateAccount(account: models.Account): ValidationError {
     if (validator.isEmpty(account.first_name)) return { msg: "First name is required", field: "first_name" };
     if (validator.isEmpty(account.last_name)) return { msg: "Last name is required", field: "last_name" };
     if (validator.isEmpty(account.email)) return { msg: "Email is required", field: "email" };
@@ -52,7 +52,7 @@ export function validateAccount(account: Account): ValidationError {
 export async function signup(req: any, res: any) {
     try {
 
-        let body = (req.body as Account)
+        let body = (req.body as models.Account)
         const valError = validateAccount(body)
 
         // send validation error
@@ -70,8 +70,6 @@ export async function signup(req: any, res: any) {
 
         // set id, client id and secret
         body.id = uuid4()
-        body.client_id = random.generate(32)
-        body.client_secret = random.generate(Random.integer(27, 32)(Random.engines.mt19937().autoSeed()))
         body.password = bcrypt.hashSync(body.password, 10)
         body.confirmation_code = random.generate(28)
         let account = await Account.create(body)
@@ -197,7 +195,7 @@ export async function forgotPassword(req: any, res: any) {
         // send password reset message
         account = account.toJSON()
         account.token = resetToken.token
-        let resp = await EmailService.sendPasswordResetEmail('kennedyidialu@gmail.com', account)
+        let resp = await EmailService.sendPasswordResetEmail(account.email, account)
         req.flash('msg', 'A reset message has been sent to you')
         return res.view('account/forgot_password')
     } catch (e) {

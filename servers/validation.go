@@ -3,6 +3,8 @@ package servers
 import (
 	"fmt"
 
+	"github.com/ellcrys/jsonapi"
+
 	"github.com/asaskevich/govalidator"
 	"github.com/ellcrys/elldb/servers/common"
 	"github.com/ellcrys/elldb/servers/db"
@@ -12,35 +14,22 @@ import (
 	mv "github.com/ncodes/mapvalidator"
 )
 
-// validateAccount validates an account to be created
-func validateAccount(req *proto_rpc.CreateAccountMsg) []common.Error {
-	var errs []common.Error
-	if govalidator.IsNull(req.FirstName) {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "First Name is required", Field: "first_name"})
-	}
-	if govalidator.IsNull(req.LastName) {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Last Name is required", Field: "last_name"})
-	}
-	if govalidator.IsNull(req.Email) {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Email is required", Field: "email"})
-	}
-	if !govalidator.IsEmail(req.Email) {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Email is not valid", Field: "email"})
-	}
-	if govalidator.IsNull(req.Password) {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Password is required", Field: "password"})
-	}
-	if len(req.Password) < 6 {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Password is too short. Must be at least 6 characters long", Field: "password"})
+// validateContract checks whether a contract message is valid
+func validateContract(req *proto_rpc.CreateContractMsg) []*jsonapi.ErrorObject {
+	var errs []*jsonapi.ErrorObject
+	if govalidator.IsNull(req.Name) {
+		errs = append(errs, &jsonapi.ErrorObject{Code: common.CodeInvalidParam, Source: "/name", Detail: "name is required"})
+	} else if !govalidator.Matches(req.Name, "^[a-z0-9_]+$") {
+		errs = append(errs, &jsonapi.ErrorObject{Code: common.CodeInvalidParam, Source: "/name", Detail: "name is not valid. Only alphanumeric and underscore characters are allowed"})
 	}
 	return errs
 }
 
 // validateBucket validates a bucket to be created
-func validateBucket(req *proto_rpc.CreateBucketMsg) []common.Error {
-	var errs []common.Error
+func validateBucket(req *proto_rpc.CreateBucketMsg) []*jsonapi.ErrorObject {
+	var errs []*jsonapi.ErrorObject
 	if govalidator.IsNull(req.Name) {
-		errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "Name is required", Field: "name"})
+		errs = append(errs, &jsonapi.ErrorObject{Code: common.CodeInvalidParam, Source: "/name", Detail: "name is required"})
 	}
 	return errs
 }
@@ -53,9 +42,9 @@ func validateBucket(req *proto_rpc.CreateBucketMsg) []common.Error {
 // - owner id must exist
 // - key is required
 // Invalid field will be replaced with their mappings if mapping is provided
-func (s *RPC) validateObjects(objs []map[string]interface{}, mapping map[string]string) ([]common.Error, error) {
+func (s *RPC) validateObjects(objs []map[string]interface{}, mapping map[string]string) ([]*jsonapi.ErrorObject, error) {
 
-	var errs []common.Error
+	var errs []*jsonapi.ErrorObject
 
 	// Returns the custom field of a standard db.Object field
 	// using the mapping provided. If a standard object field does not
@@ -70,12 +59,12 @@ func (s *RPC) validateObjects(objs []map[string]interface{}, mapping map[string]
 	}
 
 	if len(objs) == 0 {
-		errs = append(errs, common.Error{Message: "no object provided. At least one object is required"})
+		errs = append(errs, &jsonapi.ErrorObject{Detail: "no object provided. At least one object is required"})
 		return errs, nil
 	}
 
 	if len(objs) > MaxObjectPerPut {
-		errs = append(errs, common.Error{Message: fmt.Sprintf("too many objects. Only a maximum of %d can be created at once", MaxObjectPerPut)})
+		errs = append(errs, &jsonapi.ErrorObject{Detail: fmt.Sprintf("too many objects. Only a maximum of %d can be created at once", MaxObjectPerPut)})
 		return errs, nil
 	}
 
@@ -122,7 +111,7 @@ func (s *RPC) validateObjects(objs []map[string]interface{}, mapping map[string]
 
 		vErrs := mv.Validate(o, rules...)
 		for _, err := range vErrs {
-			errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: err.Error()})
+			errs = append(errs, &jsonapi.ErrorObject{Code: common.CodeInvalidParam, Detail: err.Error()})
 		}
 	}
 
@@ -134,7 +123,7 @@ func (s *RPC) validateObjects(objs []map[string]interface{}, mapping map[string]
 	err := s.db.Where("id = ?", objs[0]["owner_id"]).Last(&db.Account{}).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			errs = append(errs, common.Error{Code: common.CodeInvalidParam, Message: "owner of object(s) does not exist"})
+			errs = append(errs, &jsonapi.ErrorObject{Code: common.CodeInvalidParam, Detail: "owner of object(s) does not exist"})
 		} else {
 			return nil, err
 		}
@@ -144,29 +133,29 @@ func (s *RPC) validateObjects(objs []map[string]interface{}, mapping map[string]
 }
 
 // validateMapping checks whether a map is valid
-func validateMapping(mapping map[string]string) []common.Error {
-	var errs []common.Error
+func validateMapping(mapping map[string]string) []*jsonapi.ErrorObject {
+	var errs []*jsonapi.ErrorObject
 	validObjectFields := db.GetValidObjectFields()
 
 	if len(mapping) == 0 {
-		errs = append(errs, common.Error{
-			Field:   "mapping",
-			Message: "requires at least one custom field",
+		errs = append(errs, &jsonapi.ErrorObject{
+			Source: "",
+			Detail: "requires at least one custom field",
 		})
 	}
 
 	for customField, field := range mapping {
 		if len(field) == 0 {
-			errs = append(errs, common.Error{
-				Field:   "mapping." + customField,
-				Message: fmt.Sprintf("field name is required"),
+			errs = append(errs, &jsonapi.ErrorObject{
+				Source: "/" + customField,
+				Detail: "field name is required",
 			})
 			continue
 		}
 		if !util.InStringSlice(validObjectFields, field) {
-			errs = append(errs, common.Error{
-				Field:   "mapping." + customField,
-				Message: fmt.Sprintf("field value '%s' is not a valid object field", field),
+			errs = append(errs, &jsonapi.ErrorObject{
+				Source: "/" + customField,
+				Detail: fmt.Sprintf("field value '%s' is not a valid object field", field),
 			})
 		}
 	}

@@ -18,8 +18,7 @@ import (
 )
 
 var err error
-var conStr = "postgresql://root@localhost:26257?sslmode=disable"
-var conStrWithDB string
+var conStr = "postgresql://postgres@localhost:5432?sslmode=disable"
 var rpcServerHost = "localhost"
 var rpcServerPort = 4000
 
@@ -30,21 +29,18 @@ func init() {
 
 func setup(t *testing.T, f func(rpc, rpc2 *RPC)) {
 
-	var dbName string
-	testDB, err := common.OpenDB(conStr)
-	if err != nil {
-		panic(fmt.Errorf("failed to connect to database: %s", err))
-	}
-
-	dbName, err = common.CreateRandomDB(testDB)
+	dbName, err := common.CreateRandomDB()
 	if err != nil {
 		panic(fmt.Errorf("failed to create test database: %s", err))
 	}
 
-	conStrWithDB = "postgresql://root@localhost:26257/" + dbName + "?sslmode=disable"
+	defer common.DropDB(dbName)
+
+	conStrWithDB := "postgresql://postgres@localhost:5432/" + dbName + "?sslmode=disable"
 
 	dbCon, err := gorm.Open("postgres", conStrWithDB)
 	if err != nil {
+		t.Log(err)
 		t.Fatal("failed to connect to test database")
 	}
 
@@ -78,6 +74,4 @@ func setup(t *testing.T, f func(rpc, rpc2 *RPC)) {
 
 	f(rpc, rpc2)
 	rpc2.Stop()
-
-	common.DropDB(testDB, dbName)
 }

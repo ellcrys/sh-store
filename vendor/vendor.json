@@ -36,6 +36,10 @@
 			"revisionTime": "2016-11-01T19:39:35Z"
 		},
 		{
+			"path": "github.com/ellcrys/cockroach/pkg/util/protoutil",
+			"revision": ""
+		},
+		{
 			"checksumSHA1": "FGtTjJMmUI7CC1ihUsRket4de9E=",
 			"path": "github.com/ellcrys/cocoon/core/common",
 			"revision": "6e4411265249308dcf52ab15c3eb62d5d9d858f8",

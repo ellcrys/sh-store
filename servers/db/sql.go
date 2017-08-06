@@ -11,18 +11,16 @@ import (
 // SystemEmail is the default system account email
 var SystemEmail = "system@ellcrys.co"
 
-// SystemBucket is the default system bucket name
-var SystemBucket = "@system"
-
 // Connect connects to a database and returns the DB object
 func Connect(conStr string) (db *gorm.DB, err error) {
 	db, err = gorm.Open("postgres", conStr)
+	ApplyCallbacks(db)
 	return
 }
 
 // Initialize creates default tables if they haven't been created.
 func Initialize(db *gorm.DB) error {
-	if err := db.AutoMigrate(&Account{}, &Bucket{}, &Object{}, &Mapping{}).Error; err != nil {
+	if err := db.AutoMigrate(&Account{}, &Bucket{}, &Object{}, &Mapping{}, &Contract{}).Error; err != nil {
 		return err
 	}
 	if err := seed(db); err != nil {
@@ -41,22 +39,11 @@ func seed(db *gorm.DB) error {
 		FirstName: "",
 		LastName:  "",
 		Email:     SystemEmail,
-		Developer: true,
 		Confirmed: true,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}).FirstOrCreate(&system).Error
 	if err != nil {
 		return fmt.Errorf("failed to create system account. %s", err)
-	}
-
-	// create system bucket
-	err = db.Where(Bucket{Name: SystemBucket}).Attrs(Bucket{
-		Account:   system.ID,
-		Name:      SystemBucket,
-		CreatedAt: time.Now().UTC(),
-	}).FirstOrCreate(&Bucket{}).Error
-	if err != nil {
-		return fmt.Errorf("failed to create system bucket. %s", err)
 	}
 
 	return nil

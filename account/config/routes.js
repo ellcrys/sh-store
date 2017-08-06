@@ -31,7 +31,9 @@ module.exports.routes = {
     'get /account/forgot-password': { view: 'account/forgot_password' },
     'post /account/forgot-password': 'AccountController.forgotPassword',
     'get /account/reset-password/:token': 'AccountController.resetPasswordPage',
-    'post /account/reset-password/:token': 'AccountController.resetPassword'
+    'post /account/reset-password/:token': 'AccountController.resetPassword',
+    'post /oauth/token': 'OauthController.createToken',
+    'get /oauth/authorize': 'OauthController.authorize'
 };
 
 

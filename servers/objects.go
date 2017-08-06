@@ -37,12 +37,12 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	var err error
 	autoFinish := false
 	sessionID := util.FromIncomingMD(ctx, "session_id")
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 	authorization := util.FromIncomingMD(ctx, "authorization")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	if len(req.Bucket) == 0 {
-		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
+		return nil, common.Error(400, "", "bucket", "bucket name is required")
 	}
 
 	// check if bucket exists
@@ -62,11 +62,11 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 			}
 
 			var resp *proto_rpc.GetObjectsResponse
-			err = s.getRemoteConnection(ctx, developerID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
+			err = s.getRemoteConnection(ctx, contract.ID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
 				resp, err = remote.CreateObjects(ctx, req)
 				if err != nil {
 					if grpc.ErrorDesc(err) == "session not found" {
-						return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+						return common.Error(404, "", "", "session not found")
 					}
 					return common.ServerError
 				}
@@ -78,14 +78,14 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 		// check if session is owned by the developer, if not, return permission error
 		if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
-			if sessionAgent.OwnerID != developerID {
-				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			if sessionAgent.OwnerID != contract.ID {
+				return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 			}
 		}
 
 	} else { // session id not provided, create local, unregistered session
 		sessionID = util.UUID4()
-		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		s.dbSession.CreateUnregisteredSession(sessionID, contract.ID)
 		autoFinish = true
 		defer s.dbSession.CommitEnd(sessionID)
 	}
@@ -96,15 +96,15 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 		if autoFinish {
 			s.dbSession.RollbackEnd(sessionID)
 		}
-		return nil, common.NewSingleAPIErr(400, "", "", "failed to parse objects", nil)
+		return nil, common.Error(400, "", "", "failed to parse objects")
 	}
 
 	// add developer as the creator, owner if 'owner_id' is unset and set created_at
 	for _, obj := range objs {
 		obj["created_at"] = time.Now().UnixNano()
-		obj["creator_id"] = developerID
+		obj["creator_id"] = contract.ID
 		if obj["owner_id"] == nil {
-			obj["owner_id"] = developerID
+			obj["owner_id"] = contract.ID
 		}
 	}
 
@@ -114,12 +114,12 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	if len(req.Mapping) > 0 {
 
 		var m db.Mapping
-		if err = s.db.Where("name = ? AND account = ?", req.Mapping, developerID).First(&m).Error; err != nil {
+		if err = s.db.Where("name = ? AND account = ?", req.Mapping, contract.ID).First(&m).Error; err != nil {
 			if autoFinish {
 				s.dbSession.RollbackEnd(sessionID)
 			}
 			if err == gorm.ErrRecordNotFound {
-				return nil, common.NewSingleAPIErr(400, "", "", "mapping not found", nil)
+				return nil, common.Error(400, "", "", "mapping not found")
 			}
 			return nil, common.ServerError
 		}
@@ -148,16 +148,16 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 		if autoFinish {
 			s.dbSession.RollbackEnd(sessionID)
 		}
-		return nil, common.NewMultiAPIErr(400, "validation errors", vErrs)
+		return nil, common.Errors(400, vErrs)
 	}
 
 	// ensure caller has permission to PUT objects on behalf of the object owner
 	// TODO: check oauth permission
-	if developerID != objs[0]["owner_id"] {
+	if contract.ID != objs[0]["owner_id"] {
 		if autoFinish {
 			s.dbSession.RollbackEnd(sessionID)
 		}
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to create objects for the owner", nil)
+		return nil, common.Error(401, "", "", "permission denied: you are not authorized to create objects for the owner")
 	}
 
 	// create db objects to be inserted
@@ -174,7 +174,7 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 			s.dbSession.RollbackEnd(sessionID)
 		}
 		logRPC.Errorf("%+v", err)
-		return nil, common.NewSingleAPIErr(500, common.CodePutError, "objects", err.Error(), nil)
+		return nil, common.Error(500, common.CodePutError, "/objects", err.Error())
 	}
 
 	// reapply custom mapped fields to inserted objects so the caller
@@ -209,13 +209,13 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 	var err error
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	// bucket is required
 	if len(req.Bucket) == 0 {
-		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
+		return nil, common.Error(400, "", "bucket", "bucket name is required")
 	}
 
 	// check if bucket exists
@@ -238,11 +238,11 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 			var err error
 			var resp *proto_rpc.GetObjectsResponse
-			err = s.getRemoteConnection(ctx, developerID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
+			err = s.getRemoteConnection(ctx, contract.ID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
 				resp, err = remote.GetObjects(ctx, req)
 				if err != nil {
 					if grpc.ErrorDesc(err) == "session not found" {
-						return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+						return common.Error(404, "", "", "session not found")
 					}
 					return common.ServerError
 				}
@@ -254,24 +254,24 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 		// check if session is owned by the developer, if not, return permission error
 		if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
-			if sessionAgent.OwnerID != developerID {
-				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			if sessionAgent.OwnerID != contract.ID {
+				return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 			}
 		}
 
 	} else { // session id not provided, create local, unregistered session
 		sessionID = util.UUID4()
-		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		s.dbSession.CreateUnregisteredSession(sessionID, contract.ID)
 		defer s.dbSession.CommitEnd(sessionID)
 	}
 
 	// set owner as the developer if not set
 	if len(req.Owner) == 0 {
-		req.Owner = developerID
+		req.Owner = contract.ID
 	} else {
 		if _, err = s.getAccount(req.Owner); err != nil {
 			if strings.Contains(err.Error(), "account not found") {
-				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
+				return nil, common.Error(404, "", "/owner", "owner not found")
 			}
 		}
 	}
@@ -279,8 +279,8 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	// developer is not the owner, this action requires permission
 	// TODO: ensure auth token must be a user token from the owner
 	// and the token authorizes access to the object created by the creator for this developer
-	if developerID != req.Owner {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner", nil)
+	if contract.ID != req.Owner {
+		return nil, common.Error(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner")
 	}
 
 	// include owner, creator and bucket filters
@@ -295,7 +295,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 	// if mapping is provided in request, fetch it
 	if len(req.Mapping) > 0 {
-		m, err := s.getMapping(req.Mapping, developerID)
+		m, err := s.getMapping(req.Mapping, contract.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -309,7 +309,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	if err = session.SendQueryOpWithSession(s.dbSession, sessionID, req.Bucket, string(util.MustStringify(query)), nil, int(req.Limit), orderByToString(req.Order), &fetchedObjs); err != nil {
 		if strings.Contains(err.Error(), "parser") {
 			msg := strings.SplitN(err.Error(), ":", 2)[1]
-			return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "query", msg, nil)
+			return nil, common.Error(400, common.CodeInvalidParam, "query", msg)
 		}
 		return nil, common.ServerError
 	}
@@ -328,20 +328,20 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 }
 
 // Create a remote RPC connection to the host of a session
-func (s *RPC) getRemoteConnection(ctx context.Context, developerID, authorization, sessionID string, cb func(ctx context.Context, remoteServer proto_rpc.APIClient) error) error {
+func (s *RPC) getRemoteConnection(ctx context.Context, contractID, authorization, sessionID string, cb func(ctx context.Context, remoteServer proto_rpc.APIClient) error) error {
 
 	// find session in the registry
 	sessionItem, err := s.sessionReg.Get(sessionID)
 	if err != nil {
 		if err == session.ErrNotFound {
-			return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+			return common.Error(404, "", "", "session not found")
 		}
 		return common.ServerError
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if sessionItem.Meta["account"] != developerID {
-		return common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+	if sessionItem.Meta["contract_id"] != contractID {
+		return common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 	}
 
 	sessionHostAddr := net.JoinHostPort(sessionItem.Address, strconv.Itoa(sessionItem.Port))
@@ -365,13 +365,13 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 
 	var err error
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	// bucket is required
 	if len(req.Bucket) == 0 {
-		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
+		return nil, common.Error(400, "", "bucket", "bucket name is required")
 	}
 
 	// check if bucket exists
@@ -392,11 +392,11 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 
 			var err error
 			var resp *proto_rpc.ObjectCountResponse
-			err = s.getRemoteConnection(ctx, developerID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
+			err = s.getRemoteConnection(ctx, contract.ID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
 				resp, err = remote.CountObjects(ctx, req)
 				if err != nil {
 					if grpc.ErrorDesc(err) == "session not found" {
-						return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+						return common.Error(404, "", "", "session not found")
 					}
 					return common.ServerError
 				}
@@ -408,23 +408,23 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 
 		// check if session is owned by the developer, if not, return permission error
 		if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
-			if sessionAgent.OwnerID != developerID {
-				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			if sessionAgent.OwnerID != contract.ID {
+				return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 			}
 		}
 
 	} else {
 		sessionID = util.UUID4()
-		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		s.dbSession.CreateUnregisteredSession(sessionID, contract.ID)
 		defer s.dbSession.CommitEnd(sessionID)
 	}
 
 	if len(req.Owner) == 0 {
-		req.Owner = developerID
+		req.Owner = contract.ID
 	} else {
 		if _, err = s.getAccount(req.Owner); err != nil {
 			if strings.Contains(err.Error(), "account not found") {
-				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
+				return nil, common.Error(404, "", "/owner", "owner not found")
 			}
 		}
 	}
@@ -432,8 +432,8 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	// developer is not the owner, this action requires permission
 	// TODO: ensure auth token must be a user token from the owner
 	// and the token authorizes access to the object created by the creator for this developer
-	if developerID != req.Owner {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner", nil)
+	if contract.ID != req.Owner {
+		return nil, common.Error(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner")
 	}
 
 	// include owner and bucket filters
@@ -460,13 +460,13 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 
 	var err error
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	// bucket is required
 	if len(req.Bucket) == 0 {
-		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
+		return nil, common.Error(400, "", "bucket", "bucket name is required")
 	}
 
 	// check if bucket exists
@@ -477,7 +477,7 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 
 	// only objects in mutable buckets can be updated
 	if bucket.Immutable {
-		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket is not mutable", nil)
+		return nil, common.Error(400, "", "bucket", "bucket is not mutable")
 	}
 
 	// check if session exist in the in-memory session cache,
@@ -492,11 +492,11 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 
 			var err error
 			var resp *proto_rpc.AffectedResponse
-			err = s.getRemoteConnection(ctx, developerID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
+			err = s.getRemoteConnection(ctx, contract.ID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
 				resp, err = remote.UpdateObjects(ctx, req)
 				if err != nil {
 					if grpc.ErrorDesc(err) == "session not found" {
-						return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+						return common.Error(404, "", "", "session not found")
 					}
 					return common.ServerError
 				}
@@ -508,24 +508,24 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 
 		// check if session is owned by the developer, if not, return permission error
 		if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
-			if sessionAgent.OwnerID != developerID {
-				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			if sessionAgent.OwnerID != contract.ID {
+				return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 			}
 		}
 
 	} else {
 		sessionID = util.UUID4()
-		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		s.dbSession.CreateUnregisteredSession(sessionID, contract.ID)
 		defer s.dbSession.CommitEnd(sessionID)
 	}
 
 	// set owner as the developer if not set
 	if len(req.Owner) == 0 {
-		req.Owner = developerID
+		req.Owner = contract.ID
 	} else {
 		if _, err = s.getAccount(req.Owner); err != nil {
 			if strings.Contains(err.Error(), "account not found") {
-				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
+				return nil, common.Error(404, "", "/owner", "owner not found")
 			}
 		}
 	}
@@ -533,8 +533,8 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 	// developer is not the owner, this action requires permission
 	// TODO: ensure auth token must be a user token from the owner
 	// and the token authorizes access to the object created by the creator for this developer
-	if developerID != req.Owner {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner", nil)
+	if contract.ID != req.Owner {
+		return nil, common.Error(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner")
 	}
 
 	// include owner, creator and bucket filters
@@ -549,7 +549,7 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 
 	// if mapping is provided in request, fetch it
 	if len(req.Mapping) > 0 {
-		m, err := s.getMapping(req.Mapping, developerID)
+		m, err := s.getMapping(req.Mapping, contract.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -574,7 +574,7 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 	if err != nil {
 		if strings.Contains(err.Error(), "parser") {
 			msg := strings.SplitN(err.Error(), ":", 2)[1]
-			return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "query", msg, nil)
+			return nil, common.Error(400, common.CodeInvalidParam, "/query", msg)
 		}
 		return nil, common.ServerError
 	}
@@ -589,13 +589,13 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 
 	var err error
 	authorization := util.FromIncomingMD(ctx, "authorization")
-	developerID := ctx.Value(CtxAccount).(string)
+	contract := ctx.Value(CtxContract).(*db.Contract)
 	sessionID := util.FromIncomingMD(ctx, "session_id")
 	checkLocalOnly := util.FromIncomingMD(ctx, "check-local-only") == "true"
 
 	// bucket is required
 	if len(req.Bucket) == 0 {
-		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket name is required", nil)
+		return nil, common.Error(400, "", "bucket", "bucket name is required")
 	}
 
 	// check if bucket exists
@@ -606,7 +606,7 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 
 	// only objects in mutable buckets can be deleted
 	if bucket.Immutable {
-		return nil, common.NewSingleAPIErr(400, "", "bucket", "bucket is not mutable", nil)
+		return nil, common.Error(400, "", "bucket", "bucket is not mutable")
 	}
 
 	// check if session exist in the in-memory session cache,
@@ -621,11 +621,11 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 
 			var err error
 			var resp *proto_rpc.AffectedResponse
-			err = s.getRemoteConnection(ctx, developerID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
+			err = s.getRemoteConnection(ctx, contract.ID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
 				resp, err = remote.DeleteObjects(ctx, req)
 				if err != nil {
 					if grpc.ErrorDesc(err) == "session not found" {
-						return common.NewSingleAPIErr(404, "", "", "session not found", nil)
+						return common.Error(404, "", "", "session not found")
 					}
 					return common.ServerError
 				}
@@ -637,24 +637,24 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 
 		// check if session is owned by the developer, if not, return permission error
 		if sessionAgent := s.dbSession.GetAgent(sessionID); sessionAgent != nil {
-			if sessionAgent.OwnerID != developerID {
-				return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you don't have permission to perform this operation", nil)
+			if sessionAgent.OwnerID != contract.ID {
+				return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 			}
 		}
 
 	} else {
 		sessionID = util.UUID4()
-		s.dbSession.CreateUnregisteredSession(sessionID, developerID)
+		s.dbSession.CreateUnregisteredSession(sessionID, contract.ID)
 		defer s.dbSession.CommitEnd(sessionID)
 	}
 
 	// set owner as the developer if not set
 	if len(req.Owner) == 0 {
-		req.Owner = developerID
+		req.Owner = contract.ID
 	} else {
 		if _, err = s.getAccount(req.Owner); err != nil {
 			if strings.Contains(err.Error(), "account not found") {
-				return nil, common.NewSingleAPIErr(404, "", "owner", "owner not found", nil)
+				return nil, common.Error(404, "", "/owner", "owner not found")
 			}
 		}
 	}
@@ -662,8 +662,8 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 	// developer is not the owner, this action requires permission
 	// TODO: ensure auth token must be a user token from the owner
 	// and the token authorizes access to the object created by the creator for this developer
-	if developerID != req.Owner {
-		return nil, common.NewSingleAPIErr(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner", nil)
+	if contract.ID != req.Owner {
+		return nil, common.Error(401, "", "", "permission denied: you are not authorized to access objects belonging to the owner")
 	}
 
 	// include owner, creator and bucket filters
@@ -678,7 +678,7 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 
 	// if mapping is provided in request, fetch it
 	if len(req.Mapping) > 0 {
-		m, err := s.getMapping(req.Mapping, developerID)
+		m, err := s.getMapping(req.Mapping, contract.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -692,7 +692,7 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 	if err != nil {
 		if strings.Contains(err.Error(), "parser") {
 			msg := strings.SplitN(err.Error(), ":", 2)[1]
-			return nil, common.NewSingleAPIErr(400, common.CodeInvalidParam, "query", msg, nil)
+			return nil, common.Error(400, common.CodeInvalidParam, "/query", msg)
 		}
 		return nil, common.ServerError
 	}

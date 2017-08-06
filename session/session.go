@@ -175,20 +175,20 @@ func (s *Session) Rollback(id string) {
 }
 
 // CreateSession creates a new session agent
-func (s *Session) CreateSession(id, accountID string) (string, error) {
-	return s.createSession(id, accountID, true)
+func (s *Session) CreateSession(id, ownerID string) (string, error) {
+	return s.createSession(id, ownerID, true)
 }
 
 // CreateUnregisteredSession creates a session that is not registered on the session registry
-func (s *Session) CreateUnregisteredSession(id, accountID string) (sid string) {
-	sid, _ = s.createSession(id, accountID, false)
+func (s *Session) CreateUnregisteredSession(id, ownerID string) (sid string) {
+	sid, _ = s.createSession(id, ownerID, false)
 	return
 }
 
 // createSession creates a new session. It will generate an id if
 // id param is not empty and will only register the session on the registry
 // if registered is true.
-func (s *Session) createSession(id, accountID string, registered bool) (string, error) {
+func (s *Session) createSession(id, ownerID string, registered bool) (string, error) {
 
 	if len(id) > 0 && !govalidator.IsUUIDv4(id) {
 		return "", fmt.Errorf("id is invalid. Expected a UUIDv4 value")
@@ -208,13 +208,13 @@ func (s *Session) createSession(id, accountID string, registered bool) (string, 
 
 	s.Lock()
 	s.agents[id] = &AgentInfo{
-		OwnerID: accountID,
+		OwnerID: ownerID,
 		Agent:   agent,
 	}
 	s.Unlock()
 
 	if registered {
-		if err := s.registerSession(id, accountID); err != nil {
+		if err := s.registerSession(id, ownerID); err != nil {
 			s.End(id)
 			return "", fmt.Errorf("failed to register session. %s", err)
 		}
@@ -224,7 +224,7 @@ func (s *Session) createSession(id, accountID string, registered bool) (string, 
 }
 
 // registerSessionService register the session with the session registry
-func (s *Session) registerSession(sid string, accountID string) error {
+func (s *Session) registerSession(sid string, ownerID string) error {
 
 	addr, port, err := getNodeAddr()
 	if err != nil {
@@ -236,7 +236,7 @@ func (s *Session) registerSession(sid string, accountID string) error {
 		Port:    port,
 		SID:     sid,
 		Meta: map[string]interface{}{
-			"account": accountID,
+			"owner_id": ownerID,
 		},
 	})
 }

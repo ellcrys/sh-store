@@ -13,7 +13,7 @@ import (
 func (s *RPC) CreateBucket(ctx context.Context, req *proto_rpc.CreateBucketMsg) (*proto_rpc.Bucket, error) {
 
 	if errs := validateBucket(req); len(errs) > 0 {
-		return nil, common.NewMultiAPIErr(400, "validation errors", errs)
+		return nil, common.Errors(400, errs)
 	}
 
 	// check if bucket with matching name exists
@@ -21,12 +21,12 @@ func (s *RPC) CreateBucket(ctx context.Context, req *proto_rpc.CreateBucketMsg) 
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, common.ServerError
 	} else if err == nil {
-		return nil, common.NewSingleAPIErr(400, "", "name", "Bucket name has been used", nil)
+		return nil, common.Error(400, "", "/name", "Bucket name has been used")
 	}
 
 	var bucket = db.NewBucket()
 	copier.Copy(&bucket, &req)
-	bucket.Account = ctx.Value(CtxAccount).(string)
+	bucket.Creator = ctx.Value(CtxContract).(string)
 	if err = db.CreateBucket(s.db, bucket); err != nil {
 		return nil, common.ServerError
 	}
@@ -42,7 +42,7 @@ func (s *RPC) getBucket(name string) (*db.Bucket, error) {
 	err := s.db.Where("name = ?", name).First(&b).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, common.NewSingleAPIErr(404, "", "bucket", "bucket not found", nil)
+			return nil, common.Error(404, "", "/bucket", "bucket not found")
 		}
 		return nil, common.ServerError
 	}

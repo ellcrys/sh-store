@@ -1,24 +1,37 @@
-declare const models: any;
+
 declare const sails: { 
     db: any, 
     config: any,
     getDB(): any
 }
 
-/**
- * Account represents an account
- * @interface Account
- */
-interface Account {
-    first_name: string,
-    last_name: string,
-    email: string,
-    password: string,
-    client_id: string,
-    client_secret: string,
-    confirmed: boolean,
-    confirmation_code: string,
-    created_at: number
+declare namespace models {
+    /**
+     * Account represents an account
+     * @interface Account
+     */
+    interface Account {
+        id: string
+        first_name: string,
+        last_name: string,
+        email: string,
+        password: string,
+        confirmed: boolean,
+        confirmation_code: string,
+        created_at: string
+    }
+
+    /**
+     * Contract represents an ellcrys contract
+     */
+    interface Contract {
+        id: string,
+        creator: string,
+        name: string,
+        client_id: string,
+        client_secret: string,
+        created_at: string
+    }
 }
 
 /**
@@ -34,4 +47,9 @@ interface ValidationError {
 declare namespace EmailService {
     function sendAccountConfirmation(to: string, data: any): Promise<any>
     function sendPasswordResetEmail(to: string, data: any): Promise<any>
+}
+
+declare namespace JSONAPIService {
+    function error(status: string, detail: string, code: string, source?: string)
+    function errors(errors: Array<{status: string, detail: string, code: string}>)
 }

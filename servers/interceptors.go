@@ -20,6 +20,9 @@ var (
 	// CtxAccount represents an authenticated account
 	CtxAccount types.CtxKey = "account"
 
+	// CtxContract represents an authenticated contract
+	CtxContract types.CtxKey = "contract"
+
 	// CtxTokenClaims represents claims in an auth token
 	CtxTokenClaims types.CtxKey = "token_claims"
 
@@ -29,11 +32,11 @@ var (
 	// methodsNotRequiringAuth includes the full method name of methods that
 	// must not be processed by the auth interceptor
 	methodsNotRequiringAuth = []string{
-		"/proto_rpc.API/CreateAccount",
+		"/proto_rpc.API/Login",
 	}
 
 	// methodsRequiringAppToken includes the full method name of methods that
-	// must pass app token authorization checks
+	// require app token
 	methodsRequiringAppToken = []string{
 		"/proto_rpc.API/GetAccount",
 		"/proto_rpc.API/CreateBucket",
@@ -51,6 +54,12 @@ var (
 		"/proto_rpc.API/UpdateObjects",
 		"/proto_rpc.API/DeleteObjects",
 	}
+
+	// methodsRequiringSessionToken includes the full method name of methods that
+	// require session token
+	methodsRequiringSessionToken = []string{
+		"/proto_rpc.API/CreateContract",
+	}
 )
 
 // Interceptors returns the API interceptors
@@ -58,7 +67,7 @@ func (s *RPC) Interceptors() grpc.UnaryServerInterceptor {
 	return middleware.ChainUnaryServer(func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		logRPC.Debugf("New request [method=%s]", info.FullMethod)
 		return handler(ctx, req)
-	}, s.authInterceptor, s.requiresAppTokenInterceptor)
+	}, s.authInterceptor, s.requiresAppToken, s.requiresSessionToken)
 }
 
 // authInterceptor checks whether the request has valid access token
@@ -70,7 +79,7 @@ func (s *RPC) authInterceptor(ctx context.Context, req interface{}, info *grpc.U
 
 	tokenStr, err := util.GetAuthToken(ctx, "bearer")
 	if err != nil {
-		return nil, common.NewSingleAPIErr(401, common.CodeAuthorizationError, "", err.Error(), nil)
+		return nil, common.Error(401, common.CodeAuthorizationError, "", err.Error())
 	}
 
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
@@ -80,7 +89,7 @@ func (s *RPC) authInterceptor(ctx context.Context, req interface{}, info *grpc.U
 		}
 
 		tokenType := token.Claims.(jwt.MapClaims)["type"]
-		if tokenType == oauth.TokenTypeApp {
+		if tokenType == oauth.TokenTypeApp || tokenType == oauth.TokenTypeSession {
 			return []byte(oauth.SigningSecret), nil
 		}
 
@@ -88,12 +97,12 @@ func (s *RPC) authInterceptor(ctx context.Context, req interface{}, info *grpc.U
 	})
 	if err != nil {
 		logRPC.Debugf("%+v", err)
-		return nil, common.NewSingleAPIErr(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
+		return nil, common.Error(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error())
 	}
 
 	claims := token.Claims.(jwt.MapClaims)
 	if err = claims.Valid(); err != nil {
-		return nil, common.NewSingleAPIErr(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
+		return nil, common.Error(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error())
 	}
 
 	ctx = context.WithValue(ctx, CtxTokenClaims, claims)
@@ -101,12 +110,13 @@ func (s *RPC) authInterceptor(ctx context.Context, req interface{}, info *grpc.U
 	return handler(ctx, req)
 }
 
-// requiresAppTokenInterceptor checks if the claim produced by authInterceptor
-// is a valid app token. This will only apply to methods that require app token. It immediately
+// requiresAppToken checks if the claim is a valid app token.
+// This will only apply to methods that require an app token. It immediately
 // calls the next handler if the method does not require app token.
-func (s *RPC) requiresAppTokenInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+func (s *RPC) requiresAppToken(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 
 	var err error
+	var contract db.Contract
 
 	// verify claims for methods that require an app token
 	if !util.InStringSlice(methodsRequiringAppToken, info.FullMethod) {
@@ -115,30 +125,51 @@ func (s *RPC) requiresAppTokenInterceptor(ctx context.Context, req interface{}, 
 
 	claims := ctx.Value(CtxTokenClaims).(jwt.MapClaims)
 	if claims["type"] != oauth.TokenTypeApp {
-		return nil, common.NewSingleAPIErr(401, "", "", "endpoint requires an app token", nil)
+		return nil, common.Error(401, "", "", "endpoint requires an app token")
 	}
 
-	ctx, err = s.processAppTokenClaims(ctx, claims)
-	if err != nil {
-		return nil, err
-	}
-
-	return handler(ctx, req)
-}
-
-// processAppTokenClaims checks whether a token claim is valid. It confirms the
-// the account associated with the claim and includes the account in the context.
-func (s *RPC) processAppTokenClaims(ctx context.Context, claims jwt.MapClaims) (context.Context, error) {
-
-	// get account with matching client id
-	var account db.Account
-	if err := s.db.Where("client_id = ?", claims["id"].(string)).First(&account).Error; err != nil {
+	// get contract with matching client id
+	if err = s.db.Where("client_id = ?", claims["client_id"]).First(&contract).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return ctx, common.NewSingleAPIErr(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error(), nil)
+			return ctx, common.Error(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error())
 		}
 		logRPC.Errorf("%+v", err)
 		return nil, common.ServerError
 	}
 
-	return context.WithValue(ctx, CtxAccount, account.ID), nil
+	ctx = context.WithValue(ctx, CtxContract, &contract)
+	return handler(ctx, req)
+}
+
+// requiresSessionToken checks if the claim is a valid session token.
+// This will only apply to methods that require a session token. It immediately
+// calls the next handler if not.
+func (s *RPC) requiresSessionToken(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+
+	var err error
+	var account db.Account
+
+	// verify claims for methods that require an app token
+	if !util.InStringSlice(methodsRequiringSessionToken, info.FullMethod) {
+		return handler(ctx, req)
+	}
+
+	claims := ctx.Value(CtxTokenClaims).(jwt.MapClaims)
+	if claims["type"] != oauth.TokenTypeSession {
+		return nil, common.Error(401, "", "", "endpoint requires a session token")
+	}
+
+	// get account
+	err = s.db.Where("id = ?", claims["id"]).First(&account).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return ctx, common.Error(401, common.CodeAuthorizationError, "", ErrInvalidToken.Error())
+		}
+		logRPC.Errorf("%+v", err)
+		return nil, common.ServerError
+	}
+
+	ctx = context.WithValue(ctx, CtxAccount, account.ID)
+
+	return handler(ctx, req)
 }

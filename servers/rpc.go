@@ -100,5 +100,8 @@ func (s *RPC) Stop() error {
 	if s.server != nil {
 		s.server.Stop()
 	}
+	if s.db != nil {
+		s.db.Close()
+	}
 	return nil
 }
