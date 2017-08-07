@@ -15,7 +15,7 @@ import (
 var MaxGetAllMappingLimit = int32(50)
 
 // CreateMapping creates a mapping for a bucket
-func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg) (*proto_rpc.CreateMappingResponse, error) {
+func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg) (*proto_rpc.Mapping, error) {
 
 	if len(req.Name) == 0 {
 		req.Name = util.UUID4()
@@ -35,7 +35,7 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 	}
 
 	var mapping map[string]string
-	if err := util.FromJSON(req.Mapping, &mapping); err != nil {
+	if err := util.FromJSON([]byte(req.Mapping), &mapping); err != nil {
 		return nil, common.Error(400, "", "", "malformed mapping")
 	}
 
@@ -45,7 +45,7 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 	}
 
 	// check if an existing mapping with same name exists
-	err = s.db.Where("name = ? AND account = ?", req.Name, contract.ID).First(&db.Mapping{}).Error
+	err = s.db.Where("name = ? AND creator = ?", req.Name, contract.ID).First(&db.Mapping{}).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, common.ServerError
 	} else if err == nil {
@@ -62,15 +62,17 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 		return nil, common.ServerError
 	}
 
-	return &proto_rpc.CreateMappingResponse{
-		Bucket: req.Bucket,
-		Name:   req.Name,
-		ID:     newMapping.ID,
+	return &proto_rpc.Mapping{
+		Bucket:  req.Bucket,
+		Name:    req.Name,
+		ID:      newMapping.ID,
+		Creator: contract.ID,
+		Mapping: req.Mapping,
 	}, nil
 }
 
 // GetMapping fetches a mapping belonging to the logged in developer
-func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*proto_rpc.GetMappingResponse, error) {
+func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*proto_rpc.Mapping, error) {
 
 	if len(req.Name) == 0 {
 		return nil, common.Error(400, "", "/id", "name is required")
@@ -79,22 +81,23 @@ func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*pr
 	contract := ctx.Value(CtxContract).(*db.Contract)
 
 	var mapping db.Mapping
-	if err := s.db.Where("name = ? AND account = ?", req.Name, contract.ID).Last(&mapping).Error; err != nil {
+	if err := s.db.Where("name = ? AND creator = ?", req.Name, contract.ID).Last(&mapping).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, common.Error(404, "", "", "mapping not found")
 		}
 		return nil, common.ServerError
 	}
 
-	return &proto_rpc.GetMappingResponse{
+	return &proto_rpc.Mapping{
 		Bucket:  mapping.Bucket,
 		Name:    mapping.Name,
-		Mapping: util.MustStringify(mapping),
+		Creator: mapping.Creator,
+		Mapping: string(util.MustStringify(mapping.Mapping)),
 	}, nil
 }
 
 // GetAllMapping fetches the most recent mappings belonging to the logged in developer
-func (s *RPC) GetAllMapping(ctx context.Context, req *proto_rpc.GetAllMappingMsg) (*proto_rpc.GetAllMappingResponse, error) {
+func (s *RPC) GetAllMapping(ctx context.Context, req *proto_rpc.GetAllMappingMsg) (*proto_rpc.Mappings, error) {
 
 	contract := ctx.Value(CtxContract).(*db.Contract)
 
@@ -102,20 +105,20 @@ func (s *RPC) GetAllMapping(ctx context.Context, req *proto_rpc.GetAllMappingMsg
 		req.Limit = MaxGetAllMappingLimit
 	}
 
-	var mappings []db.Mapping
-	if err := s.db.Where("account = ?", contract.ID).Order("created_at DESC").Limit(req.Limit).Find(&mappings).Error; err != nil {
+	var mappings []*proto_rpc.Mapping
+	if err := s.db.Where("creator = ?", contract.ID).Order("created_at DESC").Limit(req.Limit).Find(&mappings).Error; err != nil {
 		return nil, common.ServerError
 	}
 
-	return &proto_rpc.GetAllMappingResponse{
-		Mappings: util.MustStringify(mappings),
+	return &proto_rpc.Mappings{
+		Mappings: mappings,
 	}, nil
 }
 
 // getMapping returns a mapping or common.APIError
-func (s *RPC) getMapping(name, account string) (*db.Mapping, error) {
+func (s *RPC) getMapping(name, creator string) (*db.Mapping, error) {
 	var m db.Mapping
-	if err := s.db.Where("name = ? AND account = ?", name, account).First(&m).Error; err != nil {
+	if err := s.db.Where("name = ? AND creator = ?", name, creator).First(&m).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, common.Error(404, common.CodeInvalidParam, "", "mapping not found")
 		}

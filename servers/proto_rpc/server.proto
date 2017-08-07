@@ -16,9 +16,9 @@ service API {
     rpc UpdateObjects(UpdateObjectsMsg) returns (AffectedResponse);
     rpc DeleteObjects(DeleteObjectsMsg) returns (AffectedResponse);
     rpc GetAccount(GetAccountMsg) returns (Account);
-    rpc CreateMapping(CreateMappingMsg) returns (CreateMappingResponse);
-    rpc GetMapping(GetMappingMsg) returns (GetMappingResponse);
-    rpc GetAllMapping(GetAllMappingMsg) returns (GetAllMappingResponse);
+    rpc CreateMapping(CreateMappingMsg) returns (Mapping);
+    rpc GetMapping(GetMappingMsg) returns (Mapping);
+    rpc GetAllMapping(GetAllMappingMsg) returns (Mappings);
 }
 
 // Account represents an account
@@ -70,9 +70,9 @@ message GetAllMappingMsg {
     int32 limit = 1           [(gogoproto.jsontag) = "limit,omitempty", (gogoproto.moretags) = 'structs:"limit,omitempty" mapstructure:"limit,omitempty"']; 
 }
 
-// GetAllMappingResponse represents a response container all mappings encoded in JSON
-message GetAllMappingResponse {
-    bytes mappings = 1        [(gogoproto.jsontag) = "mappings,omitempty", (gogoproto.moretags) = 'structs:"mappings,omitempty" mapstructure:"mappings,omitempty"']; 
+// GetMappings represents a response container all mappings encoded in JSON
+message Mappings {
+    repeated Mapping mappings = 1        [(gogoproto.jsontag) = "mappings,omitempty", (gogoproto.moretags) = 'structs:"mappings,omitempty" mapstructure:"mappings,omitempty" jsonapi:"data,omitempty"']; 
 }
 
 // GetMappingMsg represents a request for a mapping
@@ -80,12 +80,6 @@ message GetMappingMsg {
     string name = 1          [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"']; 
 }
 
-// GetMappingResponse represents a response containing a mapping
-message GetMappingResponse {
-    string name = 1             [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"']; 
-    string bucket = 2           [(gogoproto.jsontag) = "bucket,omitempty", (gogoproto.moretags) = 'structs:"bucket,omitempty" mapstructure:"bucket,omitempty"']; 
-    bytes mapping = 3           [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"']; 
-}
 
 // CreateMappingMsg represents mapping creation parameters
 message CreateMappingMsg {
@@ -96,13 +90,15 @@ message CreateMappingMsg {
     string bucket =  2        [(gogoproto.jsontag) = "bucket,omitempty", (gogoproto.moretags) = 'structs:"bucket,omitempty" mapstructure:"bucket,omitempty"']; 
     
     // JSON mapping structure as bytes
-    bytes mapping = 3          [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"'];
+    string mapping = 3          [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty"'];
 }
 
-message CreateMappingResponse {
-    string ID = 1               [(gogoproto.jsontag) = "id,omitempty", (gogoproto.moretags) = 'structs:"id,omitempty" mapstructure:"id,omitempty"'];
-    string Bucket = 2           [(gogoproto.jsontag) = "bucket,omitempty", (gogoproto.moretags) = 'structs:"bucket,omitempty" mapstructure:"bucket,omitempty"'];
-    string Name = 3             [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty"'];
+message Mapping {
+    string ID = 1               [(gogoproto.jsontag) = "id,omitempty", (gogoproto.moretags) = 'structs:"id,omitempty" mapstructure:"id,omitempty" jsonapi:"primary,mappings,omitempty"'];
+    string Bucket = 2           [(gogoproto.jsontag) = "bucket,omitempty", (gogoproto.moretags) = 'structs:"bucket,omitempty" mapstructure:"bucket,omitempty" jsonapi:"attr,bucket,omitempty"'];
+    string Creator = 3          [(gogoproto.jsontag) = "creator,omitempty", (gogoproto.moretags) = 'structs:"creator,omitempty" mapstructure:"creator,omitempty" jsonapi:"attr,creator,omitempty"'];
+    string Name = 4             [(gogoproto.jsontag) = "name,omitempty", (gogoproto.moretags) = 'structs:"name,omitempty" mapstructure:"name,omitempty" jsonapi:"attr,name,omitempty"'];
+    string Mapping = 5          [(gogoproto.jsontag) = "mapping,omitempty", (gogoproto.moretags) = 'structs:"mapping,omitempty" mapstructure:"mapping,omitempty" jsonapi:"attr,mapping,omitempty"'];
 }
 
 // GetAccountMsg represents an account request message

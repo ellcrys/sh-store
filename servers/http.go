@@ -259,7 +259,7 @@ func (s *HTTP) rollbackSession(w http.ResponseWriter, r *http.Request) (interfac
 // createMapping creates a mapping for an account
 func (s *HTTP) createMapping(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
-	var resp *proto_rpc.CreateMappingResponse
+	var resp *proto_rpc.Mapping
 	var body struct {
 		Bucket  string                 `json:"bucket"`
 		Name    string                 `json:"name"`
@@ -276,7 +276,7 @@ func (s *HTTP) createMapping(w http.ResponseWriter, r *http.Request) (interface{
 		resp, err = client.CreateMapping(ctx, &proto_rpc.CreateMappingMsg{
 			Bucket:  body.Bucket,
 			Name:    body.Name,
-			Mapping: util.MustStringify(body.Mapping),
+			Mapping: string(util.MustStringify(body.Mapping)),
 		})
 		return err
 	}); err != nil {
@@ -290,7 +290,7 @@ func (s *HTTP) createMapping(w http.ResponseWriter, r *http.Request) (interface{
 // getMapping fetches a mapping belonging to the logged in developer
 func (s *HTTP) getMapping(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
-	var resp *proto_rpc.GetMappingResponse
+	var resp *proto_rpc.Mapping
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
 		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
@@ -304,26 +304,13 @@ func (s *HTTP) getMapping(w http.ResponseWriter, r *http.Request) (interface{}, 
 		return err, 0
 	}
 
-	var respMap map[string]interface{}
-	if err := util.FromJSON(resp.Mapping, &respMap); err != nil {
-		logHTTP.Errorf("%+v", errors.Wrap(err, "failed to parse response to json"))
-		return common.ServerError, 500
-	}
-
-	var mapping map[string]interface{}
-	util.FromJSON([]byte(respMap["mapping"].(string)), &mapping)
-
-	return common.SingleObjectResp("mapping", map[string]interface{}{
-		"id":      respMap["id"],
-		"name":    mux.Vars(r)["name"],
-		"mapping": mapping,
-	}), 200
+	return resp, 200
 }
 
 // getAllMapping fetches the most recent mappings belonging to the logged in developer
 func (s *HTTP) getAllMapping(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
-	var resp *proto_rpc.GetAllMappingResponse
+	var resp *proto_rpc.Mappings
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
 		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
@@ -337,21 +324,7 @@ func (s *HTTP) getAllMapping(w http.ResponseWriter, r *http.Request) (interface{
 		return err, 0
 	}
 
-	var respMaps []map[string]interface{}
-	util.FromJSON(resp.Mappings, &respMaps)
-	attrs := make([]map[string]interface{}, len(respMaps))
-
-	for i, mapping := range respMaps {
-		var mappingVal map[string]string
-		util.FromJSON([]byte(mapping["mapping"].(string)), &mappingVal)
-		attrs[i] = map[string]interface{}{
-			"id":      mapping["id"],
-			"name":    mapping["name"].(string),
-			"mapping": mappingVal,
-		}
-	}
-
-	return common.MultiObjectResp("mapping", attrs), 200
+	return resp.Mappings, 200
 }
 
 // getAccount gets an account

@@ -70,7 +70,6 @@ func EasyHandle(method string, handler func(w http.ResponseWriter, r *http.Reque
 			w.WriteHeader(status)
 
 			if err := jsonapi.MarshalPayload(w, b); err != nil {
-				fmt.Println(err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 		}
