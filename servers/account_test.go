@@ -22,32 +22,21 @@ func TestAccount(t *testing.T) {
 			err = rpc.db.Create(&account2).Error
 			So(err, ShouldBeNil)
 
-			ctx := context.WithValue(context.Background(), CtxAccount, account.ID)
-			b := &proto_rpc.CreateBucketMsg{Name: util.RandString(5)}
-			bucket, err := rpc.CreateBucket(ctx, b)
-			So(err, ShouldBeNil)
-			So(bucket.Name, ShouldEqual, b.Name)
-			So(bucket.ID, ShouldHaveLength, 36)
-
 			Convey("account.go", func() {
 
 				Convey(".GetAccount", func() {
 
 					Convey("Should successfully get account by email", func() {
-						resp, err := rpc.GetAccount(context.Background(), &proto_rpc.GetAccountMsg{ID: account.Email})
+						acct, err := rpc.GetAccount(context.Background(), &proto_rpc.GetAccountMsg{ID: account.Email})
 						So(err, ShouldBeNil)
-						var m map[string]interface{}
-						err = util.FromJSON(resp.Object, &m)
-						So(err, ShouldBeNil)
-						So(account.Email, ShouldEqual, m["email"])
+						So(acct, ShouldNotBeNil)
+						So(account.Email, ShouldEqual, acct.Email)
 
 						Convey("Should successfully get account by ID", func() {
-							resp, err := rpc.GetAccount(context.Background(), &proto_rpc.GetAccountMsg{ID: m["id"].(string)})
+							acct2, err := rpc.GetAccount(context.Background(), &proto_rpc.GetAccountMsg{ID: acct.ID})
 							So(err, ShouldBeNil)
-							var m map[string]interface{}
-							err = util.FromJSON(resp.Object, &m)
-							So(err, ShouldBeNil)
-							So(account.Email, ShouldEqual, m["email"])
+							So(acct2, ShouldNotBeNil)
+							So(account.Email, ShouldEqual, acct2.Email)
 						})
 					})
 
@@ -55,11 +44,12 @@ func TestAccount(t *testing.T) {
 						_, err := rpc.GetAccount(context.Background(), &proto_rpc.GetAccountMsg{ID: "unknown"})
 						So(err, ShouldNotBeNil)
 						m, _ := util.JSONToMap(err.Error())
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "404",
-							"message": "Account not found",
+							"status": "404",
+							"source": "id",
+							"detail": "account not found",
 						})
 					})
 				})

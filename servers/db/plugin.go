@@ -14,12 +14,12 @@ func ApplyCallbacks(db *gorm.DB) {
 			now := time.Now().UTC()
 			if createdAtField, ok := s.FieldByName("CreatedAt"); ok {
 				if createdAtField.IsBlank {
-					createdAtField.Set(now.Format(time.RFC3339))
+					createdAtField.Set(now.Format(time.RFC3339Nano))
 				}
 			}
 			if updatedAtField, ok := s.FieldByName("UpdatedAt"); ok {
 				if updatedAtField.IsBlank {
-					updatedAtField.Set(now.Format(time.RFC3339))
+					updatedAtField.Set(now.Format(time.RFC3339Nano))
 				}
 			}
 		}
@@ -29,7 +29,7 @@ func ApplyCallbacks(db *gorm.DB) {
 		if !s.HasError() {
 			if updatedAtField, ok := s.FieldByName("UpdatedAt"); ok {
 				if updatedAtField.IsBlank {
-					updatedAtField.Set(time.Now().UTC().Format(time.RFC3339))
+					updatedAtField.Set(time.Now().UTC().Format(time.RFC3339Nano))
 				}
 			}
 		}

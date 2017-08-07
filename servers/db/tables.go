@@ -9,7 +9,7 @@ type Account struct {
 	FirstName        string `json:"first_name,omitempty" structs:"first_name,omitempty" mapstructure:"first_name,omitempty" gorm:""`
 	LastName         string `json:"last_name,omitempty" structs:"last_name,omitempty" mapstructure:"last_name,omitempty" gorm:""`
 	Email            string `json:"email,omitempty" structs:"email,omitempty" mapstructure:"email,omitempty" gorm:"index:idx_acct_email"`
-	Password         string `json:"password,omitempty" structs:"password,omitempty" mapstructure:"password,omitempty" gorm:"index:idx_acct_pass"`
+	Password         string `json:"-,omitempty" structs:"password,omitempty" mapstructure:"password,omitempty" gorm:"index:idx_acct_pass"`
 	Confirmed        bool   `json:"confirmed" structs:"confirmed,omitempty" mapstructure:"confirmed,omitempty" gorm:""`
 	ConfirmationCode string `json:"confirmation_code,omitempty" structs:"confirmation_code,omitempty" mapstructure:"confirmation_code,omitempty" gorm:""`
 	CreatedAt        string `json:"created_at,omitempty" structs:"created_at,omitempty" mapstructure:"created_at,omitempty" gorm:"type:timestamp"`

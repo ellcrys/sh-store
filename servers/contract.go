@@ -19,6 +19,8 @@ func (s *RPC) CreateContract(ctx context.Context, req *proto_rpc.CreateContractM
 		return nil, common.Errors(400, errs)
 	}
 
+	account := ctx.Value(CtxAccount).(*db.Account)
+
 	// check if a contract with a matching name exists
 	err := s.db.Where("name = ?", req.Name).First(&db.Contract{}).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
@@ -28,7 +30,7 @@ func (s *RPC) CreateContract(ctx context.Context, req *proto_rpc.CreateContractM
 	}
 
 	var contract = db.NewContract()
-	contract.Creator = ctx.Value(CtxContract).(string)
+	contract.Creator = account.ID
 	contract.Name = req.Name
 	contract.ClientID = util.RandString(32)
 	contract.ClientSecret = util.RandString(util.RandNum(27, 32))

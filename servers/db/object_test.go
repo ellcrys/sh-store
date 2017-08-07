@@ -1,7 +1,6 @@
 package db
 
 import (
-	"database/sql"
 	"fmt"
 	"testing"
 
@@ -13,51 +12,43 @@ import (
 )
 
 var err error
-var testDB *sql.DB
-var dbName string
-var conStr = "postgresql://root@localhost:26257?sslmode=disable"
-var conStrWithDB string
+var conStr = "postgresql://postgres@localhost:5432?sslmode=disable"
 
-func init() {
-	testDB, err = common.OpenDB(conStr)
-	if err != nil {
-		panic(fmt.Errorf("failed to connect to database: %s", err))
-	}
-	dbName, err = common.CreateRandomDB(testDB)
+func TestDB(t *testing.T) {
+
+	dbName, err := common.CreateRandomDB()
 	if err != nil {
 		panic(fmt.Errorf("failed to create test database: %s", err))
 	}
-	conStrWithDB = "postgresql://root@localhost:26257/" + dbName + "?sslmode=disable"
-}
 
-func TestDB(t *testing.T) {
+	defer common.DropDB(dbName)
+
+	conStrWithDB := "postgresql://postgres@localhost:5432/" + dbName + "?sslmode=disable"
 
 	db, err := gorm.Open("postgres", conStrWithDB)
 	if err != nil {
 		t.Fatal("failed to connect to test database")
 	}
 
+	ApplyCallbacks(db)
+
 	err = db.CreateTable(&Bucket{}, &Object{}, &Account{}).Error
 	if err != nil {
 		t.Fatalf("failed to create database tables. %s", err)
 	}
 
-	defer func() {
-		common.DropDB(testDB, dbName)
-	}()
-
 	Convey("object.go", t, func() {
 		Convey(".GetValidObjectFields", func() {
 			Convey("Should return expected fields", func() {
 				fields := GetValidObjectFields()
-				So(fields, ShouldResemble, []string{"id", "owner_id", "creator_id", "bucket", "key", "value", "created_at", "ref1", "ref2", "ref3", "ref4", "ref5", "ref6", "ref7", "ref8", "ref9", "ref10"})
+				So(fields, ShouldResemble, []string{"id", "owner_id", "creator_id", "bucket", "key", "value", "created_at", "updated_at", "ref1", "ref2", "ref3", "ref4", "ref5", "ref6", "ref7", "ref8", "ref9", "ref10"})
 			})
 		})
 
 		Convey(".CreateBucket", func() {
 			bucket := NewBucket()
 			bucket.Name = util.RandString(5)
-			bucket.Account = "account1"
+			bucket.Creator = "account1"
 			bucket.Immutable = false
 			err := CreateBucket(db, bucket)
 			So(err, ShouldBeNil)
@@ -187,6 +178,84 @@ func TestDB(t *testing.T) {
 				}, &count)
 				So(err, ShouldBeNil)
 				So(count, ShouldEqual, 1)
+			})
+		})
+
+		Convey(".UpdateObjects", func() {
+			bucket := NewBucket()
+			bucket.Name = util.RandString(5)
+			err := CreateBucket(db, bucket)
+			So(err, ShouldBeNil)
+
+			objs := []*Object{NewObject(), NewObject()}
+			objs[0].Key = "obj1"
+			objs[0].Value = "abc"
+			objs[1].Key = "obj2"
+			err = CreateObjects(db, bucket.Name, objs)
+
+			Convey("Should successfully update object", func() {
+				affected, err := UpdateObjects(db, &Object{Key: objs[0].Key}, Object{Value: "xyz"})
+				So(affected, ShouldEqual, 1)
+				So(err, ShouldBeNil)
+				var obj Object
+				err = db.Where("key = ?", objs[0].Key).First(&obj).Error
+				So(err, ShouldBeNil)
+				So(obj.Value, ShouldEqual, "xyz")
+			})
+
+			Convey("Should successfully update object using jsq expression", func() {
+				affected, err := UpdateObjects(db, &Object{
+					QueryParams: QueryParams{
+						Expr: Expr{
+							Expr: "key = ?",
+							Args: []interface{}{objs[0].Key},
+						},
+					},
+				}, Object{Value: "xyz"})
+				So(affected, ShouldEqual, 1)
+				So(err, ShouldBeNil)
+				var obj Object
+				err = db.Where("key = ?", objs[0].Key).First(&obj).Error
+				So(err, ShouldBeNil)
+				So(obj.Value, ShouldEqual, "xyz")
+			})
+		})
+
+		Convey(".DeleteObjects", func() {
+			bucket := NewBucket()
+			bucket.Name = util.RandString(5)
+			err := CreateBucket(db, bucket)
+			So(err, ShouldBeNil)
+
+			objs := []*Object{NewObject(), NewObject()}
+			objs[0].Key = "obj1"
+			objs[0].Value = "abc"
+			objs[1].Key = "obj2"
+			err = CreateObjects(db, bucket.Name, objs)
+
+			Convey("Should successfully delete object", func() {
+				affected, err := DeleteObjects(db, &Object{Key: objs[0].Key})
+				So(affected, ShouldEqual, 1)
+				So(err, ShouldBeNil)
+				var obj Object
+				err = db.Where("key = ?", objs[0].Key).First(&obj).Error
+				So(err, ShouldEqual, gorm.ErrRecordNotFound)
+			})
+
+			Convey("Should successfully delete object using jsq expression", func() {
+				affected, err := DeleteObjects(db, &Object{
+					QueryParams: QueryParams{
+						Expr: Expr{
+							Expr: "key = ?",
+							Args: []interface{}{objs[0].Key},
+						},
+					},
+				})
+				So(affected, ShouldEqual, 1)
+				So(err, ShouldBeNil)
+				var obj Object
+				err = db.Where("key = ?", objs[0].Key).First(&obj).Error
+				So(err, ShouldEqual, gorm.ErrRecordNotFound)
 			})
 		})
 

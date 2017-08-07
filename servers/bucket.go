@@ -16,23 +16,27 @@ func (s *RPC) CreateBucket(ctx context.Context, req *proto_rpc.CreateBucketMsg) 
 		return nil, common.Errors(400, errs)
 	}
 
+	contract := ctx.Value(CtxContract).(*db.Contract)
+
 	// check if bucket with matching name exists
 	err := s.db.Where("name = ?", req.Name).First(&db.Bucket{}).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, common.ServerError
 	} else if err == nil {
-		return nil, common.Error(400, "", "/name", "Bucket name has been used")
+		return nil, common.Error(400, "", "/name", "name has been used")
 	}
 
 	var bucket = db.NewBucket()
-	copier.Copy(&bucket, &req)
-	bucket.Creator = ctx.Value(CtxContract).(string)
+	bucket.Creator = contract.ID
+	bucket.Name = req.Name
+	bucket.Immutable = req.Immutable
 	if err = db.CreateBucket(s.db, bucket); err != nil {
 		return nil, common.ServerError
 	}
 
 	var resp proto_rpc.Bucket
 	copier.Copy(&resp, bucket)
+
 	return &resp, nil
 }
 

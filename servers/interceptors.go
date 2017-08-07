@@ -33,12 +33,12 @@ var (
 	// must not be processed by the auth interceptor
 	methodsNotRequiringAuth = []string{
 		"/proto_rpc.API/Login",
+		"/proto_rpc.API/GetAccount",
 	}
 
 	// methodsRequiringAppToken includes the full method name of methods that
 	// require app token
 	methodsRequiringAppToken = []string{
-		"/proto_rpc.API/GetAccount",
 		"/proto_rpc.API/CreateBucket",
 		"/proto_rpc.API/CreateObjects",
 		"/proto_rpc.API/GetObjects",
@@ -169,7 +169,7 @@ func (s *RPC) requiresSessionToken(ctx context.Context, req interface{}, info *g
 		return nil, common.ServerError
 	}
 
-	ctx = context.WithValue(ctx, CtxAccount, account.ID)
+	ctx = context.WithValue(ctx, CtxAccount, &account)
 
 	return handler(ctx, req)
 }

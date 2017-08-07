@@ -5,7 +5,7 @@ import (
 	"github.com/ellcrys/elldb/servers/common"
 	"github.com/ellcrys/elldb/servers/db"
 	"github.com/ellcrys/elldb/servers/proto_rpc"
-	"github.com/ellcrys/util"
+	"github.com/jinzhu/copier"
 	"github.com/jinzhu/gorm"
 	"golang.org/x/net/context"
 )
@@ -18,7 +18,7 @@ func (s *RPC) getAccountByEmail(email string) (*db.Account, error) {
 }
 
 // GetAccount fetches an account object
-func (s *RPC) GetAccount(ctx context.Context, req *proto_rpc.GetAccountMsg) (*proto_rpc.GetObjectResponse, error) {
+func (s *RPC) GetAccount(ctx context.Context, req *proto_rpc.GetAccountMsg) (*proto_rpc.Account, error) {
 
 	var account db.Account
 	var q = s.db.Where("id = ?", req.ID)
@@ -29,14 +29,15 @@ func (s *RPC) GetAccount(ctx context.Context, req *proto_rpc.GetAccountMsg) (*pr
 
 	if err := q.First(&account).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, common.Error(404, "", "id", "Account not found")
+			return nil, common.Error(404, "", "id", "account not found")
 		}
 		return nil, common.ServerError
 	}
 
-	return &proto_rpc.GetObjectResponse{
-		Object: util.MustStringify(account),
-	}, nil
+	var resp proto_rpc.Account
+	copier.Copy(&resp, account)
+
+	return &resp, nil
 }
 
 // getAccount returns an account or common.APIError if not found

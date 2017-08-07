@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/asaskevich/govalidator"
+	"github.com/ellcrys/jsonapi"
 	"github.com/ellcrys/util"
 	"google.golang.org/grpc"
 )
@@ -67,7 +68,11 @@ func EasyHandle(method string, handler func(w http.ResponseWriter, r *http.Reque
 		default:
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(status)
-			json.NewEncoder(w).Encode(b)
+
+			if err := jsonapi.MarshalPayload(w, b); err != nil {
+				fmt.Println(err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 		}
 	}
 }

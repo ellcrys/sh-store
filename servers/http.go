@@ -12,10 +12,10 @@ import (
 	"github.com/ellcrys/elldb/servers/common"
 	"github.com/ellcrys/elldb/servers/proto_rpc"
 	"github.com/ellcrys/util"
-	"github.com/fatih/structs"
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/copier"
 	"github.com/jinzhu/gorm"
+	"github.com/kr/pretty"
 	"github.com/labstack/gommon/log"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
@@ -149,8 +149,8 @@ func (s *HTTP) createBucket(w http.ResponseWriter, r *http.Request) (interface{}
 		log.Errorf("%+v", err)
 		return err, 0
 	}
-
-	return common.SingleObjectResp("bucket", structs.New(resp).Map()), 201
+	pretty.Println(resp)
+	return resp, 201
 }
 
 // createSession creates a new session
@@ -357,7 +357,7 @@ func (s *HTTP) getAllMapping(w http.ResponseWriter, r *http.Request) (interface{
 // getAccount gets an account
 func (s *HTTP) getAccount(w http.ResponseWriter, r *http.Request) (interface{}, int) {
 	var err error
-	var resp *proto_rpc.GetObjectResponse
+	var resp *proto_rpc.Account
 
 	if err = s.dialRPC(func(client proto_rpc.APIClient) error {
 		md := metadata.Pairs("authorization", r.Header.Get("Authorization"))
@@ -371,10 +371,7 @@ func (s *HTTP) getAccount(w http.ResponseWriter, r *http.Request) (interface{}, 
 		return err, 0
 	}
 
-	var account map[string]interface{}
-	util.FromJSON2(resp.Object, &account)
-
-	return common.SingleObjectResp("account", account), 200
+	return resp, 200
 }
 
 // createObjects creates an object and can optionally use an existing mapping
