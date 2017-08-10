@@ -9,22 +9,24 @@ import (
 	"github.com/ellcrys/elldb/core/servers/common"
 	"github.com/ellcrys/elldb/core/servers/db"
 	"github.com/ellcrys/elldb/core/servers/oauth"
-	"github.com/ellcrys/elldb/types"
 	"github.com/ellcrys/util"
 	middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/jinzhu/gorm"
 	"golang.org/x/net/context"
 )
 
+// CtxKey is used as key when defining string value in a context
+type CtxKey string
+
 var (
 	// CtxAccount represents an authenticated account
-	CtxAccount types.CtxKey = "account"
+	CtxAccount CtxKey = "account"
 
 	// CtxContract represents an authenticated contract
-	CtxContract types.CtxKey = "contract"
+	CtxContract CtxKey = "contract"
 
 	// CtxTokenClaims represents claims in an auth token
-	CtxTokenClaims types.CtxKey = "token_claims"
+	CtxTokenClaims CtxKey = "token_claims"
 
 	// ErrInvalidToken represents a error about an invalid token
 	ErrInvalidToken = fmt.Errorf("permission denied. Invalid token")
