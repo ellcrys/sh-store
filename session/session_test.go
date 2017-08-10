@@ -13,35 +13,28 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
-func setupDB() {
-	testDB, err = common.OpenDB(conStr)
-	if err != nil {
-		panic(fmt.Errorf("failed to connect to database: %s", err))
-	}
-	dbName, err = common.CreateRandomDB(testDB)
+func TestSession(t *testing.T) {
+
+	dbName, err := common.CreateRandomDB()
 	if err != nil {
 		panic(fmt.Errorf("failed to create test database: %s", err))
 	}
-	conStrWithDB = "postgresql://root@localhost:26257/" + dbName + "?sslmode=disable"
-}
 
-func TestSession(t *testing.T) {
-
-	setupDB()
-
+	conStrWithDB := "postgresql://postgres@localhost:5432/" + dbName + "?sslmode=disable"
 	dbCon, err := gorm.Open("postgres", conStrWithDB)
 	if err != nil {
 		t.Fatal("failed to connect to test database")
 	}
 
+	db.ApplyCallbacks(dbCon)
+
+	defer common.DropDB(dbName)
+	defer dbCon.Close()
+
 	err = dbCon.CreateTable(&db.Bucket{}, &db.Object{}, &db.Account{}).Error
 	if err != nil {
 		t.Fatalf("failed to create database tables. %s", err)
 	}
-
-	defer func() {
-		common.DropDB(testDB, dbName)
-	}()
 
 	sessionReg, err := NewConsulRegistry()
 	if err != nil {
@@ -140,6 +133,7 @@ func TestSession(t *testing.T) {
 			session.SetDB(dbCon)
 			_, err := session.CreateSession(sid, "")
 			So(err, ShouldBeNil)
+
 			sid = util.UUID4()
 			_, err = session.CreateSession(sid, "")
 			So(err, ShouldBeNil)
@@ -306,7 +300,7 @@ func TestSession(t *testing.T) {
 
 			Convey("Perform operations", func() {
 				bucket := db.NewBucket()
-				bucket.Name = "some_name"
+				bucket.Name = util.RandString(5)
 				err := dbCon.Create(bucket).Error
 				So(err, ShouldBeNil)
 
@@ -331,6 +325,7 @@ func TestSession(t *testing.T) {
 									Key:       "my_obj_1",
 									OwnerID:   owner.ID,
 									CreatorID: owner.ID,
+									Value:     "abc",
 								},
 							},
 						})
@@ -408,11 +403,85 @@ func TestSession(t *testing.T) {
 								session.CommitEnd(sid)
 							})
 						})
-					})
-				})
 
-				Reset(func() {
-					common.ClearTable(dbCon.DB(), "objects")
+						Convey("OpUpdateObjects", func() {
+							Convey("Should successfully update an object by querying with JSQ", func() {
+								sid := util.UUID4()
+								sid, err := session.CreateSession(sid, "")
+								So(err, ShouldBeNil)
+								var count int64
+								op := &Op{
+									OpType:       OpUpdateObjects,
+									UpdateObject: &db.Object{Value: "xyz"},
+									Done:         make(chan struct{}),
+									QueryWithJSQ: `{ "key": "my_obj_1" }`,
+									Out:          &count,
+								}
+								err = session.SendOp(sid, op)
+								So(err, ShouldBeNil)
+								So(op.NumAffectedObjects, ShouldEqual, 1)
+								session.CommitEnd(sid)
+							})
+
+							Convey("Should successfully update an object by querying with db.Object", func() {
+								sid := util.UUID4()
+								sid, err := session.CreateSession(sid, "")
+								So(err, ShouldBeNil)
+								var count int64
+								op := &Op{
+									OpType:       OpUpdateObjects,
+									UpdateObject: &db.Object{Value: "xyz"},
+									Done:         make(chan struct{}),
+									QueryWithObject: &db.Object{
+										Key: "my_obj_1",
+									},
+									Out: &count,
+								}
+								err = session.SendOp(sid, op)
+								So(err, ShouldBeNil)
+								So(op.NumAffectedObjects, ShouldEqual, 1)
+								session.CommitEnd(sid)
+							})
+						})
+
+						Convey("OpDeleteObjects", func() {
+							Convey("Should successfully delete an object by querying with JSQ", func() {
+								sid := util.UUID4()
+								sid, err := session.CreateSession(sid, "")
+								So(err, ShouldBeNil)
+								var count int64
+								op := &Op{
+									OpType:       OpDeleteObjects,
+									Done:         make(chan struct{}),
+									QueryWithJSQ: `{ "key": "my_obj_1" }`,
+									Out:          &count,
+								}
+								err = session.SendOp(sid, op)
+								So(err, ShouldBeNil)
+								So(op.NumAffectedObjects, ShouldEqual, 1)
+								session.CommitEnd(sid)
+							})
+
+							Convey("Should successfully delete an object by querying with db.Object", func() {
+								sid := util.UUID4()
+								sid, err := session.CreateSession(sid, "")
+								So(err, ShouldBeNil)
+								var count int64
+								op := &Op{
+									OpType: OpDeleteObjects,
+									Done:   make(chan struct{}),
+									QueryWithObject: &db.Object{
+										Key: "my_obj_1",
+									},
+									Out: &count,
+								}
+								err = session.SendOp(sid, op)
+								So(err, ShouldBeNil)
+								So(op.NumAffectedObjects, ShouldEqual, 1)
+								session.CommitEnd(sid)
+							})
+						})
+					})
 				})
 			})
 

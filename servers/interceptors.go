@@ -114,7 +114,6 @@ func (s *RPC) authInterceptor(ctx context.Context, req interface{}, info *grpc.U
 // This will only apply to methods that require an app token. It immediately
 // calls the next handler if the method does not require app token.
 func (s *RPC) requiresAppToken(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-
 	var err error
 	var contract db.Contract
 

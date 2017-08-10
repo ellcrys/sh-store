@@ -5,31 +5,28 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/metadata"
+
 	"github.com/ellcrys/elldb/servers/db"
 	"github.com/ellcrys/elldb/servers/oauth"
 	"github.com/ellcrys/elldb/servers/proto_rpc"
 	"github.com/ellcrys/elldb/session"
 	"github.com/ellcrys/util"
 	. "github.com/smartystreets/goconvey/convey"
-	"google.golang.org/grpc/metadata"
 )
 
 func TestSession(t *testing.T) {
 	setup(t, func(rpc, rpc2 *RPC) {
 		Convey("Session", t, func() {
-			c1 := &proto_rpc.CreateAccountMsg{FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
-			resp, err := rpc.CreateAccount(context.Background(), c1)
+			var account = db.Account{ID: util.UUID4(), FirstName: "john", LastName: "Doe", Email: util.RandString(5) + "@example.com", Password: "something"}
+			err := rpc.db.Create(&account).Error
 			So(err, ShouldBeNil)
-			var account map[string]interface{}
-			util.FromJSON(resp.Object, &account)
 
-			c2 := &proto_rpc.CreateAccountMsg{FirstName: "john2", LastName: "Doe2", Email: util.RandString(5) + "@example.com", Password: "something", Developer: true}
-			resp, err = rpc.CreateAccount(context.Background(), c2)
+			var contract = db.Contract{ID: util.UUID4(), Creator: account.ID, Name: util.RandString(5), ClientID: util.RandString(5), ClientSecret: util.RandString(5)}
+			err = rpc.db.Create(&contract).Error
 			So(err, ShouldBeNil)
-			var account2 map[string]interface{}
-			util.FromJSON(resp.Object, &account2)
 
-			ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+			ctx := context.WithValue(context.Background(), CtxContract, &contract)
 			b := &proto_rpc.CreateBucketMsg{Name: util.RandString(5)}
 			bucket, err := rpc.CreateBucket(ctx, b)
 			So(err, ShouldBeNil)
@@ -41,32 +38,34 @@ func TestSession(t *testing.T) {
 				Convey(".CreateSession", func() {
 
 					Convey("Should return error if session id is not a UUID4", func() {
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err := rpc.CreateSession(ctx, &proto_rpc.Session{ID: "invalid_id"})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"message": "id is invalid. Expected UUIDv4 value",
-							"status":  "400",
+							"detail": "id is invalid. Expected UUIDv4 value",
+							"status": "400",
 						})
 					})
 
 					Convey("Should successfully create a session with an explicitly provided ID", func() {
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						id := util.UUID4()
 						resp, err := rpc.CreateSession(ctx, &proto_rpc.Session{ID: id})
 						So(err, ShouldBeNil)
 						So(resp.ID, ShouldEqual, id)
+						rpc.dbSession.GetAgent(id).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 					})
 
 					Convey("Should successfully create a session with an implicitly assigned ID when ID is not provide", func() {
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						resp, err := rpc.CreateSession(ctx, &proto_rpc.Session{})
 						So(err, ShouldBeNil)
 						So(resp.ID, ShouldNotBeEmpty)
+						rpc.dbSession.GetAgent(resp.ID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 					})
 				})
 
@@ -76,63 +75,64 @@ func TestSession(t *testing.T) {
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "400",
-							"message": "session id is required",
+							"status": "400",
+							"detail": "session id is required",
 						})
 					})
 
-					Convey("Should return permission error if authenticated account/caller is not the owner of the session", func() {
+					Convey("Should return permission error if authenticated contract is not the owner of the session", func() {
 						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						defer rpc.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "401",
-							"message": "permission denied: you don't have permission to perform this operation",
+							"detail": "permission denied: you don't have permission to perform this operation",
+							"status": "401",
 						})
 					})
 
 					Convey("Should return error is session does not exists", func() {
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: "unknown"})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"message": "session not found",
-							"status":  "404",
+							"detail": "session not found",
+							"status": "404",
 						})
 					})
 
-					Convey("Using a remote session; Should return permission error if authenticated account/caller is not the owner of the session", func() {
+					Convey("Using a remote session; Should return permission error if authenticated contract is not the owner of the session", func() {
 						sid := util.UUID4()
 						err := rpc.sessionReg.Add(session.RegItem{SID: sid,
 							Address: "localhost",
 							Port:    9000,
 							Meta: map[string]interface{}{
-								"account": "some_account",
+								"owner_id": "some_account",
 							},
 						})
 						So(err, ShouldBeNil)
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err = rpc.GetSession(ctx, &proto_rpc.Session{ID: sid})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "401",
-							"message": "permission denied: you don't have permission to perform this operation",
+							"status": "401",
+							"detail": "permission denied: you don't have permission to perform this operation",
 						})
 					})
 
@@ -142,20 +142,21 @@ func TestSession(t *testing.T) {
 							Address: "localhost",
 							Port:    9000,
 							Meta: map[string]interface{}{
-								"account": account["id"].(string),
+								"owner_id": contract.ID,
 							},
 						})
 						So(err, ShouldBeNil)
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						s, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: sid})
 						So(err, ShouldBeNil)
 						So(s.ID, ShouldEqual, sid)
 					})
 
 					Convey("With a unregistered session; Should successfully get a session", func() {
-						sid := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), account["id"].(string))
+						sid := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), contract.ID)
+						defer rpc.dbSession.GetAgent(sid).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 						So(err, ShouldBeNil)
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						s, err := rpc.GetSession(ctx, &proto_rpc.Session{ID: sid})
 						So(err, ShouldBeNil)
 						So(s.ID, ShouldEqual, sid)
@@ -164,37 +165,39 @@ func TestSession(t *testing.T) {
 
 				Convey(".DeleteSession", func() {
 					Convey("Should return error if session id is not provided", func() {
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "400",
-							"message": "session id is required",
+							"detail": "session id is required",
+							"status": "400",
 						})
 					})
 
-					Convey("Should return permission error if authenticated account/caller is not the owner of the session", func() {
+					Convey("Should return permission error if authenticated contract is not the owner of the session", func() {
 						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						defer rpc.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "401",
-							"message": "permission denied: you don't have permission to perform this operation",
+							"detail": "permission denied: you don't have permission to perform this operation",
+							"status": "401",
 						})
 					})
 
 					Convey("With an unregistered session; Should successfully delete session", func() {
-						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), account["id"].(string))
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), contract.ID)
+						defer rpc.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						resp, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldBeNil)
 						So(resp.ID, ShouldEqual, sessionID)
@@ -203,16 +206,17 @@ func TestSession(t *testing.T) {
 
 					Convey("With an remote session; Should successfully delete session", func() {
 						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   account["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
+							"client_id": contract.ClientID,
+							"type":      oauth.TokenTypeApp,
+							"iat":       time.Now().Unix(),
 						})
 
 						sessionID := util.UUID4()
-						rpc2.dbSession.CreateSession(sessionID, account["id"].(string))
+						rpc2.dbSession.CreateSession(sessionID, contract.ID)
+						defer rpc2.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 
 						ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
-						ctx = context.WithValue(ctx, CtxAccount, account["id"])
+						ctx = context.WithValue(ctx, CtxContract, &contract)
 						resp, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldBeNil)
 						So(resp.ID, ShouldEqual, sessionID)
@@ -221,73 +225,76 @@ func TestSession(t *testing.T) {
 
 					Convey("With remote session; Should return error if session exists in registry but not found in the node hosting the session", func() {
 						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   account["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
+							"client_id": contract.ClientID,
+							"type":      oauth.TokenTypeApp,
+							"iat":       time.Now().Unix(),
 						})
 
 						sessionID := util.UUID4()
-						rpc2.dbSession.CreateSession(sessionID, account["id"].(string))
-						rpc2.dbSession.RemoveAgent(sessionID)
+						rpc2.dbSession.CreateSession(sessionID, contract.ID)
+
+						defer rpc2.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
+						rpc2.dbSession.RemoveAgent(sessionID)                 // remove agent from session record
 
 						ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
-						ctx = context.WithValue(ctx, CtxAccount, account["id"])
+						ctx = context.WithValue(ctx, CtxContract, &contract)
 						_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "404",
-							"message": "session not found",
+							"detail": "session not found",
+							"status": "404",
 						})
 					})
 
 					Convey("Should return error if session does not exist locally or in session registry", func() {
 						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   account["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
+							"client_id": contract.ClientID,
+							"type":      oauth.TokenTypeApp,
+							"iat":       time.Now().Unix(),
 						})
 
 						sessionID := util.UUID4()
 
 						ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
-						ctx = context.WithValue(ctx, CtxAccount, account["id"])
+						ctx = context.WithValue(ctx, CtxContract, &contract)
 						_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "404",
-							"message": "session not found",
+							"detail": "session not found",
+							"status": "404",
 						})
 					})
 
-					Convey("With an remote session; Should return error if authenticated account/caller is not the owner of the session", func() {
+					Convey("With an remote session; Should return error if authenticated contract is not the owner of the session", func() {
 						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   account["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
+							"client_id": contract.ClientID,
+							"type":      oauth.TokenTypeApp,
+							"iat":       time.Now().Unix(),
 						})
 
 						sessionID := util.UUID4()
 						rpc2.dbSession.CreateSession(sessionID, "some_id")
+						defer rpc2.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 
 						ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "bearer "+token))
-						ctx = context.WithValue(ctx, CtxAccount, account["id"])
+						ctx = context.WithValue(ctx, CtxContract, &contract)
 						_, err := rpc.DeleteSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "401",
-							"message": "permission denied: you don't have permission to perform this operation",
+							"detail": "permission denied: you don't have permission to perform this operation",
+							"status": "401",
 						})
 					})
 				})
@@ -298,32 +305,35 @@ func TestSession(t *testing.T) {
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "400",
-							"message": "session id is required",
+							"detail": "session id is required",
+							"status": "400",
 						})
 					})
 
 					Convey("With local session; Should return error if authenticated account is not the owner of the session", func() {
 						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						defer rpc.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
+
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err := rpc.CommitSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "401",
-							"message": "permission denied: you don't have permission to perform this operation",
+							"detail": "permission denied: you don't have permission to perform this operation",
+							"status": "401",
 						})
 					})
 
 					Convey("With local session; Should successfully commit a session", func() {
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
-						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), account["id"].(string))
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
+						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), contract.ID)
+						defer rpc.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 
 						obj1 := db.NewObject()
 						obj1.Key = util.RandString(10)
@@ -345,49 +355,51 @@ func TestSession(t *testing.T) {
 					})
 
 					Convey("Should return error if session does not exist locally or in session registry", func() {
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err = rpc.CommitSession(ctx, &proto_rpc.Session{ID: "unknown"})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "404",
-							"message": "session not found",
+							"detail": "session not found",
+							"status": "404",
 						})
 					})
 
 					Convey("With remote session; Should return error if authenticated account is not the owner of the session", func() {
 						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), "some_id")
+						defer rpc2.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err := rpc.CommitSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "401",
-							"message": "permission denied: you don't have permission to perform this operation",
+							"detail": "permission denied: you don't have permission to perform this operation",
+							"status": "401",
 						})
 					})
 
 					Convey("With remote session; Should successfully commit a session", func() {
-						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), account["id"].(string))
+						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), contract.ID)
+						defer rpc2.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 
 						obj1 := db.NewObject()
 						obj1.Key = util.RandString(10)
 						obj1.Value = "myvalue"
 
 						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   account["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
+							"client_id": contract.ClientID,
+							"type":      oauth.TokenTypeApp,
+							"iat":       time.Now().Unix(),
 						})
 
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
 						_, err := rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
 							Bucket:  b.Name,
@@ -405,7 +417,8 @@ func TestSession(t *testing.T) {
 					})
 
 					Convey("With remote session; Should return error if session was not found in remode node", func() {
-						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), account["id"].(string))
+						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), contract.ID)
+						defer rpc2.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 
 						// remove the session from the remote node
 						rpc2.dbSession.RemoveAgent(sessionID)
@@ -415,23 +428,23 @@ func TestSession(t *testing.T) {
 						obj1.Value = "myvalue"
 
 						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   account["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
+							"client_id": contract.ClientID,
+							"type":      oauth.TokenTypeApp,
+							"iat":       time.Now().Unix(),
 						})
 
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
 
 						_, err := rpc.CommitSession(ctx2, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "404",
-							"message": "session not found",
+							"status": "404",
+							"detail": "session not found",
 						})
 					})
 				})
@@ -442,32 +455,35 @@ func TestSession(t *testing.T) {
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "400",
-							"message": "session id is required",
+							"detail": "session id is required",
+							"status": "400",
 						})
 					})
 
 					Convey("With local session; Should return error if authenticated account is not the owner of the session", func() {
 						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), "some_id")
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						defer rpc.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
+
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err := rpc.RollbackSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "401",
-							"message": "permission denied: you don't have permission to perform this operation",
+							"detail": "permission denied: you don't have permission to perform this operation",
+							"status": "401",
 						})
 					})
 
 					Convey("With local session; Should successfully rollback a session", func() {
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
-						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), account["id"].(string))
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
+						sessionID := rpc.dbSession.CreateUnregisteredSession(util.UUID4(), contract.ID)
+						defer rpc.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 
 						obj1 := db.NewObject()
 						obj1.Key = util.RandString(10)
@@ -489,49 +505,51 @@ func TestSession(t *testing.T) {
 					})
 
 					Convey("Should return error if session does not exist locally or in session registry", func() {
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err = rpc.RollbackSession(ctx, &proto_rpc.Session{ID: "unknown"})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "404",
-							"message": "session not found",
+							"detail": "session not found",
+							"status": "404",
 						})
 					})
 
 					Convey("With remote session; Should return error if authenticated account is not the owner of the session", func() {
 						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), "some_id")
+						defer rpc2.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						_, err := rpc.RollbackSession(ctx, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "401",
-							"message": "permission denied: you don't have permission to perform this operation",
+							"detail": "permission denied: you don't have permission to perform this operation",
+							"status": "401",
 						})
 					})
 
 					Convey("With remote session; Should successfully rollback a session", func() {
-						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), account["id"].(string))
+						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), contract.ID)
+						defer rpc2.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 
 						obj1 := db.NewObject()
 						obj1.Key = util.RandString(10)
 						obj1.Value = "myvalue"
 
 						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   account["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
+							"client_id": contract.ClientID,
+							"type":      oauth.TokenTypeApp,
+							"iat":       time.Now().Unix(),
 						})
 
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
 						_, err := rpc.CreateObjects(ctx2, &proto_rpc.CreateObjectsMsg{
 							Bucket:  b.Name,
@@ -549,7 +567,8 @@ func TestSession(t *testing.T) {
 					})
 
 					Convey("With remote session; Should return error if session was not found in remode node", func() {
-						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), account["id"].(string))
+						sessionID, _ := rpc2.dbSession.CreateSession(util.UUID4(), contract.ID)
+						defer rpc2.dbSession.GetAgent(sessionID).Agent.Stop() // stop agent. if we don't do this, the agent transaction will remain alive
 
 						// remove the session from the remote node
 						rpc2.dbSession.RemoveAgent(sessionID)
@@ -559,23 +578,23 @@ func TestSession(t *testing.T) {
 						obj1.Value = "myvalue"
 
 						token, _ := oauth.MakeToken(oauth.SigningSecret, map[string]interface{}{
-							"id":   account["client_id"],
-							"type": oauth.TokenTypeApp,
-							"iat":  time.Now().Unix(),
+							"client_id": contract.ClientID,
+							"type":      oauth.TokenTypeApp,
+							"iat":       time.Now().Unix(),
 						})
 
-						ctx := context.WithValue(context.Background(), CtxAccount, account["id"])
+						ctx := context.WithValue(context.Background(), CtxContract, &contract)
 						ctx2 := metadata.NewIncomingContext(ctx, metadata.Pairs("session_id", sessionID, "authorization", "bearer "+token))
 
 						_, err := rpc.RollbackSession(ctx2, &proto_rpc.Session{ID: sessionID})
 						So(err, ShouldNotBeNil)
 						m, err := util.JSONToMap(err.Error())
 						So(err, ShouldBeNil)
-						errs := m["Errors"].(map[string]interface{})["errors"].([]interface{})
+						errs := m["errors"].([]interface{})
 						So(errs, ShouldHaveLength, 1)
 						So(errs[0], ShouldResemble, map[string]interface{}{
-							"status":  "404",
-							"message": "session not found",
+							"detail": "session not found",
+							"status": "404",
 						})
 					})
 				})

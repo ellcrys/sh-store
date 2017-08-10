@@ -32,7 +32,7 @@ func TestHTTPCommon(t *testing.T) {
 				})
 			})
 
-			Convey("Should return json body for APIError", func() {
+			Convey("Should return expected Error json body ", func() {
 				req, err := http.NewRequest("GET", "/some_endpoint", nil)
 				So(err, ShouldBeNil)
 				rr := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestHTTPCommon(t *testing.T) {
 				})
 			})
 
-			Convey("Should return string if response is an error whose message is not a json string", func() {
+			Convey("Should return string if response is an Error whose message is not a json string", func() {
 				req, err := http.NewRequest("GET", "/some_endpoint", nil)
 				So(err, ShouldBeNil)
 				rr := httptest.NewRecorder()
@@ -99,14 +99,14 @@ func TestHTTPCommon(t *testing.T) {
 				So(err, ShouldBeNil)
 				rr := httptest.NewRecorder()
 				handler := http.HandlerFunc(EasyHandle("GET", func(w http.ResponseWriter, r *http.Request) (interface{}, int) {
-					return struct {
+					return &struct {
 						Name string
 					}{Name: "ben"}, 200
 				}))
 				handler.ServeHTTP(rr, req)
 				So(rr.Code, ShouldEqual, 200)
 				So(rr.HeaderMap["Content-Type"][0], ShouldEqual, "application/json")
-				So(rr.Body.String(), ShouldContainSubstring, `{"Name":"ben"}`)
+				So(rr.Body.String(), ShouldContainSubstring, `{"data":{"type":""}`)
 			})
 		})
 	})

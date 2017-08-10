@@ -2,6 +2,7 @@ package common
 
 import (
 	"database/sql"
+	"fmt"
 	"os/exec"
 	"strings"
 
@@ -22,7 +23,11 @@ func CreateRandomDB() (string, error) {
 
 // DropDB drops a database
 func DropDB(dbName string) error {
-	return exec.Command("dropdb", dbName).Run()
+	fmt.Println("Dropping database: ", dbName)
+	out, err := exec.Command("dropdb", dbName).CombinedOutput()
+	fmt.Println(string(out))
+	return err
+	// return exec.Command("dropdb", dbName).Run()
 }
 
 // ClearTable truncates tables

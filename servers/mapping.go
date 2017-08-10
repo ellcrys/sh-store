@@ -75,7 +75,7 @@ func (s *RPC) CreateMapping(ctx context.Context, req *proto_rpc.CreateMappingMsg
 func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*proto_rpc.Mapping, error) {
 
 	if len(req.Name) == 0 {
-		return nil, common.Error(400, "", "/id", "name is required")
+		return nil, common.Error(400, "", "name", "name is required")
 	}
 
 	contract := ctx.Value(CtxContract).(*db.Contract)
@@ -89,6 +89,7 @@ func (s *RPC) GetMapping(ctx context.Context, req *proto_rpc.GetMappingMsg) (*pr
 	}
 
 	return &proto_rpc.Mapping{
+		ID:      mapping.ID,
 		Bucket:  mapping.Bucket,
 		Name:    mapping.Name,
 		Creator: mapping.Creator,

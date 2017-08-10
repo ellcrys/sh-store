@@ -70,7 +70,7 @@ func (s *RPC) GetSession(ctx context.Context, req *proto_rpc.Session) (*proto_rp
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if regItem.Meta["contract_id"] != contract.ID {
+	if regItem.Meta["owner_id"] != contract.ID {
 		return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 	}
 
@@ -119,7 +119,7 @@ func (s *RPC) DeleteSession(ctx context.Context, req *proto_rpc.Session) (*proto
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if item.Meta["contract_id"] != contract.ID {
+	if item.Meta["owner_id"] != contract.ID {
 		return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 	}
 
@@ -191,7 +191,7 @@ func (s *RPC) CommitSession(ctx context.Context, req *proto_rpc.Session) (*proto
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if item.Meta["contract_id"] != contract.ID {
+	if item.Meta["owner_id"] != contract.ID {
 		return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 	}
 
@@ -263,7 +263,7 @@ func (s *RPC) RollbackSession(ctx context.Context, req *proto_rpc.Session) (*pro
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if item.Meta["contract_id"] != contract.ID {
+	if item.Meta["owner_id"] != contract.ID {
 		return nil, common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 	}
 

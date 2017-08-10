@@ -65,6 +65,10 @@ func EasyHandle(method string, handler func(w http.ResponseWriter, r *http.Reque
 
 		case string:
 			fmt.Fprint(w, b)
+		case map[string]string, map[string]interface{}:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(status)
+			json.NewEncoder(w).Encode(b)
 		default:
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(status)

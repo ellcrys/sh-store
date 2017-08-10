@@ -119,9 +119,8 @@ func (s *RPC) validateObjects(objs []map[string]interface{}, mapping map[string]
 		return errs, nil
 	}
 
-	// check whether the owner of the objects exist
-	err := s.db.Where("id = ?", objs[0]["owner_id"]).Last(&db.Account{}).Error
-	if err != nil {
+	// assuming the owner is an account, check if the account it exist
+	if err := s.objectOwnerExists(objs[0]["owner_id"].(string)); err != nil {
 		if err == gorm.ErrRecordNotFound {
 			errs = append(errs, &jsonapi.ErrorObject{Code: common.CodeInvalidParam, Detail: "owner of object(s) does not exist"})
 		} else {

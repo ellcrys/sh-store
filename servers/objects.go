@@ -58,17 +58,14 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 
 			// abort further operations
 			if checkLocalOnly {
-				return nil, fmt.Errorf("session not found")
+				return nil, common.Error(404, "", "", "session not found")
 			}
 
 			var resp *proto_rpc.GetObjectsResponse
 			err = s.getRemoteConnection(ctx, contract.ID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
 				resp, err = remote.CreateObjects(ctx, req)
 				if err != nil {
-					if grpc.ErrorDesc(err) == "session not found" {
-						return common.Error(404, "", "", "session not found")
-					}
-					return common.ServerError
+					return fmt.Errorf(grpc.ErrorDesc(err))
 				}
 				return nil
 			})
@@ -114,7 +111,7 @@ func (s *RPC) CreateObjects(ctx context.Context, req *proto_rpc.CreateObjectsMsg
 	if len(req.Mapping) > 0 {
 
 		var m db.Mapping
-		if err = s.db.Where("name = ? AND account = ?", req.Mapping, contract.ID).First(&m).Error; err != nil {
+		if err = s.db.Where("name = ? AND creator = ?", req.Mapping, contract.ID).First(&m).Error; err != nil {
 			if autoFinish {
 				s.dbSession.RollbackEnd(sessionID)
 			}
@@ -204,6 +201,28 @@ func orderByToString(orderByList []*proto_rpc.OrderBy) string {
 	return strings.Join(s, ", ")
 }
 
+// objectOwnerExists checks whether an object id matches a record
+// in db.Account table or db.Contract table. Return gorm.ErrRecordNotFound
+// if not found in either tables.
+func (s *RPC) objectOwnerExists(id string) error {
+	q := s.db.Where("id = ?", id)
+	err := q.Last(&db.Account{}).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// assuming the owner is a contract, check if the contract exists
+			if err = q.Last(&db.Contract{}).Error; err != nil {
+				if err == gorm.ErrRecordNotFound {
+					return gorm.ErrRecordNotFound
+				}
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
 // GetObjects fetches objects belonging to an account
 func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*proto_rpc.GetObjectsResponse, error) {
 
@@ -233,7 +252,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 			// abort further operations
 			if checkLocalOnly {
-				return nil, fmt.Errorf("session not found")
+				return nil, common.Error(404, "", "", "session not found")
 			}
 
 			var err error
@@ -241,10 +260,7 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 			err = s.getRemoteConnection(ctx, contract.ID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
 				resp, err = remote.GetObjects(ctx, req)
 				if err != nil {
-					if grpc.ErrorDesc(err) == "session not found" {
-						return common.Error(404, "", "", "session not found")
-					}
-					return common.ServerError
+					return fmt.Errorf(grpc.ErrorDesc(err))
 				}
 				return nil
 			})
@@ -269,10 +285,11 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 	if len(req.Owner) == 0 {
 		req.Owner = contract.ID
 	} else {
-		if _, err = s.getAccount(req.Owner); err != nil {
-			if strings.Contains(err.Error(), "account not found") {
+		if err := s.objectOwnerExists(req.Owner); err != nil {
+			if err == gorm.ErrRecordNotFound {
 				return nil, common.Error(404, "", "/owner", "owner not found")
 			}
+			return nil, err
 		}
 	}
 
@@ -307,9 +324,8 @@ func (s *RPC) GetObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*pro
 
 	var fetchedObjs []*db.Object
 	if err = session.SendQueryOpWithSession(s.dbSession, sessionID, req.Bucket, string(util.MustStringify(query)), nil, int(req.Limit), orderByToString(req.Order), &fetchedObjs); err != nil {
-		if strings.Contains(err.Error(), "parser") {
-			msg := strings.SplitN(err.Error(), ":", 2)[1]
-			return nil, common.Error(400, common.CodeInvalidParam, "query", msg)
+		if e, ok := err.(*session.QueryError); ok {
+			return nil, common.Error(400, common.CodeInvalidParam, "/query", e.Error())
 		}
 		return nil, common.ServerError
 	}
@@ -340,7 +356,7 @@ func (s *RPC) getRemoteConnection(ctx context.Context, contractID, authorization
 	}
 
 	// check if session is owned by the developer, if not, return permission error
-	if sessionItem.Meta["contract_id"] != contractID {
+	if sessionItem.Meta["owner_id"] != contractID {
 		return common.Error(401, "", "", "permission denied: you don't have permission to perform this operation")
 	}
 
@@ -387,7 +403,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 		if !s.dbSession.HasSession(sessionID) {
 
 			if checkLocalOnly {
-				return nil, fmt.Errorf("session not found")
+				return nil, common.Error(404, "", "", "session not found")
 			}
 
 			var err error
@@ -395,10 +411,7 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 			err = s.getRemoteConnection(ctx, contract.ID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
 				resp, err = remote.CountObjects(ctx, req)
 				if err != nil {
-					if grpc.ErrorDesc(err) == "session not found" {
-						return common.Error(404, "", "", "session not found")
-					}
-					return common.ServerError
+					return fmt.Errorf(grpc.ErrorDesc(err))
 				}
 				return nil
 			})
@@ -422,10 +435,11 @@ func (s *RPC) CountObjects(ctx context.Context, req *proto_rpc.GetObjectMsg) (*p
 	if len(req.Owner) == 0 {
 		req.Owner = contract.ID
 	} else {
-		if _, err = s.getAccount(req.Owner); err != nil {
-			if strings.Contains(err.Error(), "account not found") {
+		if err := s.objectOwnerExists(req.Owner); err != nil {
+			if err == gorm.ErrRecordNotFound {
 				return nil, common.Error(404, "", "/owner", "owner not found")
 			}
+			return nil, err
 		}
 	}
 
@@ -487,7 +501,7 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 		if !s.dbSession.HasSession(sessionID) {
 
 			if checkLocalOnly {
-				return nil, fmt.Errorf("session not found")
+				return nil, common.Error(404, "", "", "session not found")
 			}
 
 			var err error
@@ -495,10 +509,7 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 			err = s.getRemoteConnection(ctx, contract.ID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
 				resp, err = remote.UpdateObjects(ctx, req)
 				if err != nil {
-					if grpc.ErrorDesc(err) == "session not found" {
-						return common.Error(404, "", "", "session not found")
-					}
-					return common.ServerError
+					return fmt.Errorf(grpc.ErrorDesc(err))
 				}
 				return nil
 			})
@@ -523,10 +534,11 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 	if len(req.Owner) == 0 {
 		req.Owner = contract.ID
 	} else {
-		if _, err = s.getAccount(req.Owner); err != nil {
-			if strings.Contains(err.Error(), "account not found") {
+		if err := s.objectOwnerExists(req.Owner); err != nil {
+			if err == gorm.ErrRecordNotFound {
 				return nil, common.Error(404, "", "/owner", "owner not found")
 			}
+			return nil, err
 		}
 	}
 
@@ -572,9 +584,8 @@ func (s *RPC) UpdateObjects(ctx context.Context, req *proto_rpc.UpdateObjectsMsg
 
 	numAffected, err := session.SendUpdateOpWithSession(s.dbSession, sessionID, string(util.MustStringify(query)), nil, update)
 	if err != nil {
-		if strings.Contains(err.Error(), "parser") {
-			msg := strings.SplitN(err.Error(), ":", 2)[1]
-			return nil, common.Error(400, common.CodeInvalidParam, "/query", msg)
+		if e, ok := err.(*session.QueryError); ok {
+			return nil, common.Error(400, common.CodeInvalidParam, "/query", e.Error())
 		}
 		return nil, common.ServerError
 	}
@@ -616,7 +627,7 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 		if !s.dbSession.HasSession(sessionID) {
 
 			if checkLocalOnly {
-				return nil, fmt.Errorf("session not found")
+				return nil, common.Error(404, "", "", "session not found")
 			}
 
 			var err error
@@ -624,10 +635,7 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 			err = s.getRemoteConnection(ctx, contract.ID, authorization, sessionID, func(ctx context.Context, remote proto_rpc.APIClient) error {
 				resp, err = remote.DeleteObjects(ctx, req)
 				if err != nil {
-					if grpc.ErrorDesc(err) == "session not found" {
-						return common.Error(404, "", "", "session not found")
-					}
-					return common.ServerError
+					return fmt.Errorf(grpc.ErrorDesc(err))
 				}
 				return nil
 			})
@@ -652,10 +660,11 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 	if len(req.Owner) == 0 {
 		req.Owner = contract.ID
 	} else {
-		if _, err = s.getAccount(req.Owner); err != nil {
-			if strings.Contains(err.Error(), "account not found") {
+		if err := s.objectOwnerExists(req.Owner); err != nil {
+			if err == gorm.ErrRecordNotFound {
 				return nil, common.Error(404, "", "/owner", "owner not found")
 			}
+			return nil, err
 		}
 	}
 
@@ -690,9 +699,8 @@ func (s *RPC) DeleteObjects(ctx context.Context, req *proto_rpc.DeleteObjectsMsg
 
 	numAffected, err := session.SendDeleteOpWithSession(s.dbSession, sessionID, string(util.MustStringify(query)), nil)
 	if err != nil {
-		if strings.Contains(err.Error(), "parser") {
-			msg := strings.SplitN(err.Error(), ":", 2)[1]
-			return nil, common.Error(400, common.CodeInvalidParam, "/query", msg)
+		if e, ok := err.(*session.QueryError); ok {
+			return nil, common.Error(400, common.CodeInvalidParam, "/query", e.Error())
 		}
 		return nil, common.ServerError
 	}

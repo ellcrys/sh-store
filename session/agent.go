@@ -11,7 +11,6 @@ import (
 	"github.com/ellcrys/elldb/servers/db"
 	"github.com/jinzhu/gorm"
 	"github.com/ncodes/jsq"
-	"github.com/pkg/errors"
 )
 
 // OpType represents a db connection operation
@@ -41,6 +40,15 @@ var (
 	// ErrAgentBusy represents an agent in busy state
 	ErrAgentBusy = fmt.Errorf("agent is busy")
 )
+
+// QueryError represents an error with a query object or expression
+type QueryError struct {
+	Message string
+}
+
+func (e *QueryError) Error() string {
+	return e.Message
+}
 
 // Op represents an agent operation
 type Op struct {
@@ -86,39 +94,70 @@ type Op struct {
 // that holds a database session
 type Agent struct {
 	sync.Mutex
-	opChan     chan *Op
-	curOp      *Op
-	db         *gorm.DB
-	Error      error
-	stop       bool
-	busy       bool
-	tx         *gorm.DB
+
+	// opChan is the channel where new operation is received from
+	opChan chan *Op
+
+	// curOp represents an operation
+	curOp *Op
+
+	// db is the database connection
+	db *gorm.DB
+
+	// Error indicates the latest error that occurred while executing an operation
+	Error error
+
+	// stop causes the agent to exit
+	stop bool
+
+	// busy indicates that an operation is being executed
+	busy bool
+
+	// tx represents the current db transaction
+	tx *gorm.DB
+
+	// txFinished indicates that the current transaction has completed
 	txFinished bool
-	began      bool
-	debug      bool
+
+	// indicates that the agent has started or Start() has been called
+	began bool
+
+	// debug turns on jsq logs
+	debug bool
 }
 
 // NewAgent creates a new agent
 func NewAgent(db *gorm.DB, opChan chan *Op) *Agent {
-	return &Agent{db: db, opChan: opChan}
+	return &Agent{db: db, opChan: opChan, txFinished: true}
 }
 
 // Reset resets the agent
 func (a *Agent) Reset() {
+	a.Lock()
 	a.Error = nil
 	a.stop = false
 	a.busy = false
-	a.txFinished = false
+	a.txFinished = true
 	a.curOp = nil
+	a.Unlock()
 	a.newTx()
 }
 
-// Stop stops the current session
+// Stop stops the agent and rolls back existing transaction
 func (a *Agent) Stop() {
-	if a.curOp != nil {
-		a.closeDoneChan(a.curOp)
+	a.Lock()
+	defer a.Unlock()
+	if !a.stop {
+		if a.curOp != nil {
+			a.Unlock()
+			a.closeDoneChan(a.curOp)
+			a.Lock()
+		}
+		if !a.txFinished && a.tx != nil {
+			a.tx.Rollback()
+		}
+		a.stop = true
 	}
-	a.stop = true
 }
 
 // put one or more objects
@@ -153,17 +192,17 @@ func (a *Agent) get() error {
 	if len(a.curOp.QueryWithJSQ) > 0 {
 
 		if !govalidator.IsJSON(a.curOp.QueryWithJSQ) {
-			return fmt.Errorf("query must be a json string")
+			return &QueryError{Message: "query must be a json string"}
 		}
 
 		jsq := jsq.NewJSQ(db.GetValidObjectFields())
 		if err := jsq.Parse(a.curOp.QueryWithJSQ); err != nil {
-			return fmt.Errorf("parser:%s", err)
+			return &QueryError{Message: err.Error()}
 		}
 
 		sql, args, err := jsq.ToSQL()
 		if err != nil {
-			return errors.Wrap(err, "failed to generate SQL")
+			return &QueryError{Message: err.Error()}
 		}
 
 		if a.debug {
@@ -208,17 +247,17 @@ func (a *Agent) count() error {
 	if len(a.curOp.QueryWithJSQ) > 0 {
 
 		if !govalidator.IsJSON(a.curOp.QueryWithJSQ) {
-			return fmt.Errorf("query must be a json string")
+			return &QueryError{Message: "query must be a json string"}
 		}
 
 		jsq := jsq.NewJSQ(db.GetValidObjectFields())
 		if err := jsq.Parse(a.curOp.QueryWithJSQ); err != nil {
-			return fmt.Errorf("parser:%s", err)
+			return &QueryError{Message: err.Error()}
 		}
 
 		sql, args, err := jsq.ToSQL()
 		if err != nil {
-			return errors.Wrap(err, "failed to generate SQL")
+			return &QueryError{Message: err.Error()}
 		}
 
 		if a.debug {
@@ -243,10 +282,9 @@ func (a *Agent) count() error {
 // update objects matching a query
 func (a *Agent) update() error {
 
-	var err error
-
 	a.Lock()
 	defer a.Unlock()
+	var err error
 
 	if !a.began {
 		return fmt.Errorf("agent has not started. Did you call Start()?")
@@ -262,17 +300,17 @@ func (a *Agent) update() error {
 	if len(a.curOp.QueryWithJSQ) > 0 {
 
 		if !govalidator.IsJSON(a.curOp.QueryWithJSQ) {
-			return fmt.Errorf("query must be a json string")
+			return &QueryError{Message: "query must be a json string"}
 		}
 
 		jsq := jsq.NewJSQ(db.GetValidObjectFields())
 		if err := jsq.Parse(a.curOp.QueryWithJSQ); err != nil {
-			return fmt.Errorf("parser:%s", err)
+			return &QueryError{Message: err.Error()}
 		}
 
 		sql, args, err := jsq.ToSQL()
 		if err != nil {
-			return errors.Wrap(err, "failed to generate SQL")
+			return &QueryError{Message: err.Error()}
 		}
 
 		if a.debug {
@@ -298,10 +336,9 @@ func (a *Agent) update() error {
 // delete objects matching a query
 func (a *Agent) delete() error {
 
-	var err error
-
 	a.Lock()
 	defer a.Unlock()
+	var err error
 
 	if !a.began {
 		return fmt.Errorf("agent has not started. Did you call Start()?")
@@ -317,17 +354,17 @@ func (a *Agent) delete() error {
 	if len(a.curOp.QueryWithJSQ) > 0 {
 
 		if !govalidator.IsJSON(a.curOp.QueryWithJSQ) {
-			return fmt.Errorf("query must be a json string")
+			return &QueryError{Message: "query must be a json string"}
 		}
 
 		jsq := jsq.NewJSQ(db.GetValidObjectFields())
 		if err := jsq.Parse(a.curOp.QueryWithJSQ); err != nil {
-			return fmt.Errorf("parser:%s", err)
+			return &QueryError{Message: err.Error()}
 		}
 
 		sql, args, err := jsq.ToSQL()
 		if err != nil {
-			return errors.Wrap(err, "failed to generate SQL")
+			return &QueryError{Message: err.Error()}
 		}
 
 		if a.debug {
@@ -368,23 +405,27 @@ func (a *Agent) newTx() {
 
 // commit commits the current transaction
 func (a *Agent) commit() {
+	a.Lock()
 	if a.tx != nil && !a.txFinished {
-		a.Lock()
 		a.Error = a.tx.Commit().Error
 		a.txFinished = true
 		a.Unlock()
 		a.newTx()
+	} else {
+		a.Unlock()
 	}
 }
 
 // rollback rolls back the current transaction
 func (a *Agent) rollback() {
+	a.Lock()
 	if a.tx != nil && !a.txFinished {
-		a.Lock()
 		a.Error = a.tx.Rollback().Error
 		a.txFinished = true
 		a.Unlock()
 		a.newTx()
+	} else {
+		a.Unlock()
 	}
 }
 
@@ -407,10 +448,10 @@ func (a *Agent) closeDoneChan(op *Op) {
 // and passes any error to the operation
 func (a *Agent) Start(endCb func()) {
 
-	a.Lock()
-	a.tx = a.db.Begin()
-	a.began = true
-	a.Unlock()
+	if !a.stop {
+		a.began = true
+		a.newTx()
+	}
 
 	for !a.stop {
 		select {
@@ -429,38 +470,26 @@ func (a *Agent) Start(endCb func()) {
 			// process operations
 			switch op.OpType {
 			case OpPutObjects:
-				if op.Error = a.put(); op.Error != nil {
-					a.rollback()
-				}
+				op.Error = a.put()
 			case OpGetObjects:
-				if op.Error = a.get(); op.Error != nil {
-					a.rollback()
-				}
+				op.Error = a.get()
 			case OpCountObjects:
-				if op.Error = a.count(); op.Error != nil {
-					a.rollback()
-				}
+				op.Error = a.count()
 			case OpUpdateObjects:
-				if op.Error = a.update(); op.Error != nil {
-					a.rollback()
-				}
+				op.Error = a.update()
 			case OpDeleteObjects:
-				if op.Error = a.delete(); op.Error != nil {
-					a.rollback()
-				}
+				op.Error = a.delete()
 			}
 
-			a.busy = false
 			a.closeDoneChan(op)
+			a.busy = false
 
 		case <-time.After(MaxSessionIdleTime):
-			a.rollback()
 			a.Stop()
 		}
 	}
 
 	a.began = false
-
 	if endCb != nil {
 		endCb()
 	}

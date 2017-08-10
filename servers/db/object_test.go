@@ -21,8 +21,6 @@ func TestDB(t *testing.T) {
 		panic(fmt.Errorf("failed to create test database: %s", err))
 	}
 
-	defer common.DropDB(dbName)
-
 	conStrWithDB := "postgresql://postgres@localhost:5432/" + dbName + "?sslmode=disable"
 
 	db, err := gorm.Open("postgres", conStrWithDB)
@@ -31,6 +29,8 @@ func TestDB(t *testing.T) {
 	}
 
 	ApplyCallbacks(db)
+	defer common.DropDB(dbName)
+	defer db.Close()
 
 	err = db.CreateTable(&Bucket{}, &Object{}, &Account{}).Error
 	if err != nil {
