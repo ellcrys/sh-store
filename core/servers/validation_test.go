@@ -3,6 +3,8 @@ package servers
 import (
 	"testing"
 
+	"github.com/ellcrys/elldb/core/servers/proto_rpc"
+
 	"github.com/ellcrys/elldb/core/servers/db"
 	"github.com/ellcrys/jsonapi"
 	"github.com/fatih/structs"
@@ -57,7 +59,41 @@ func TestValidation(t *testing.T) {
 	})
 }
 
-func TestValidations(t *testing.T) {
+func TestValidateContract(t *testing.T) {
+	setup(t, func(rpc, rpc2 *RPC) {
+		Convey(".validateContract", t, func() {
+			Convey("Should return error if name is not provided", func() {
+				errs := validateContract(&proto_rpc.CreateContractMsg{})
+				So(errs, ShouldHaveLength, 1)
+				So(errs[0], ShouldResemble, &jsonapi.ErrorObject{
+					ID:     "",
+					Title:  "",
+					Detail: "name is required",
+					Status: "",
+					Code:   "invalid_parameter",
+					Source: "/name",
+					Meta:   (*map[string]interface{})(nil),
+				})
+			})
+
+			Convey("Should return error if name is not valid", func() {
+				errs := validateContract(&proto_rpc.CreateContractMsg{Name: "something*invalid&"})
+				So(errs, ShouldHaveLength, 1)
+				So(errs[0], ShouldResemble, &jsonapi.ErrorObject{
+					ID:     "",
+					Title:  "",
+					Detail: "name is not valid. Only alphanumeric and underscore characters are allowed",
+					Status: "",
+					Code:   "invalid_parameter",
+					Source: "/name",
+					Meta:   (*map[string]interface{})(nil),
+				})
+			})
+		})
+	})
+}
+
+func TestValidateObjects(t *testing.T) {
 	setup(t, func(rpc, rpc2 *RPC) {
 		Convey(".validateObjects", t, func() {
 			Convey("Should return error if no object is provided", func() {
