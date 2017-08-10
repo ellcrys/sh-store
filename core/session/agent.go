@@ -8,7 +8,7 @@ import (
 
 	"github.com/asaskevich/govalidator"
 	"github.com/ellcrys/elldb/config"
-	"github.com/ellcrys/elldb/servers/db"
+	"github.com/ellcrys/elldb/core/servers/db"
 	"github.com/jinzhu/gorm"
 	"github.com/ncodes/jsq"
 )

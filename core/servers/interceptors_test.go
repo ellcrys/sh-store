@@ -7,8 +7,8 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	jwt "github.com/dgrijalva/jwt-go"
-	"github.com/ellcrys/elldb/servers/db"
-	"github.com/ellcrys/elldb/servers/oauth"
+	"github.com/ellcrys/elldb/core/servers/db"
+	"github.com/ellcrys/elldb/core/servers/oauth"
 	"github.com/ellcrys/util"
 
 	"google.golang.org/grpc"

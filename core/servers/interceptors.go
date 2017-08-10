@@ -6,9 +6,9 @@ import (
 	"google.golang.org/grpc"
 
 	jwt "github.com/dgrijalva/jwt-go"
-	"github.com/ellcrys/elldb/servers/common"
-	"github.com/ellcrys/elldb/servers/db"
-	"github.com/ellcrys/elldb/servers/oauth"
+	"github.com/ellcrys/elldb/core/servers/common"
+	"github.com/ellcrys/elldb/core/servers/db"
+	"github.com/ellcrys/elldb/core/servers/oauth"
 	"github.com/ellcrys/elldb/types"
 	"github.com/ellcrys/util"
 	middleware "github.com/grpc-ecosystem/go-grpc-middleware"

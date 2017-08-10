@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/ellcrys/elldb/servers/db"
-	"github.com/ellcrys/elldb/servers/proto_rpc"
+	"github.com/ellcrys/elldb/core/servers/db"
+	"github.com/ellcrys/elldb/core/servers/proto_rpc"
 	"github.com/ellcrys/util"
 	. "github.com/smartystreets/goconvey/convey"
 )

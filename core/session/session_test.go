@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ellcrys/elldb/servers/common"
-	"github.com/ellcrys/elldb/servers/db"
+	"github.com/ellcrys/elldb/core/servers/common"
+	"github.com/ellcrys/elldb/core/servers/db"
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"

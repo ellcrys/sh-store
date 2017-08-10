@@ -6,9 +6,9 @@ import (
 	"github.com/ellcrys/jsonapi"
 
 	"github.com/asaskevich/govalidator"
-	"github.com/ellcrys/elldb/servers/common"
-	"github.com/ellcrys/elldb/servers/db"
-	"github.com/ellcrys/elldb/servers/proto_rpc"
+	"github.com/ellcrys/elldb/core/servers/common"
+	"github.com/ellcrys/elldb/core/servers/db"
+	"github.com/ellcrys/elldb/core/servers/proto_rpc"
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/gorm"
 	mv "github.com/ncodes/mapvalidator"

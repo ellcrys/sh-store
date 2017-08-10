@@ -3,7 +3,7 @@ package servers
 import (
 	"testing"
 
-	"github.com/ellcrys/elldb/servers/db"
+	"github.com/ellcrys/elldb/core/servers/db"
 	"github.com/ellcrys/jsonapi"
 	"github.com/fatih/structs"
 	. "github.com/smartystreets/goconvey/convey"

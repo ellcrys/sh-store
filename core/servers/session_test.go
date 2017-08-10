@@ -7,10 +7,10 @@ import (
 
 	"google.golang.org/grpc/metadata"
 
-	"github.com/ellcrys/elldb/servers/db"
-	"github.com/ellcrys/elldb/servers/oauth"
-	"github.com/ellcrys/elldb/servers/proto_rpc"
-	"github.com/ellcrys/elldb/session"
+	"github.com/ellcrys/elldb/core/servers/db"
+	"github.com/ellcrys/elldb/core/servers/oauth"
+	"github.com/ellcrys/elldb/core/servers/proto_rpc"
+	"github.com/ellcrys/elldb/core/session"
 	"github.com/ellcrys/util"
 	. "github.com/smartystreets/goconvey/convey"
 )

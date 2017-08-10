@@ -9,10 +9,10 @@ import (
 
 	"os"
 
-	"github.com/ellcrys/elldb/servers/common"
-	"github.com/ellcrys/elldb/servers/db"
-	"github.com/ellcrys/elldb/servers/oauth"
-	"github.com/ellcrys/elldb/session"
+	"github.com/ellcrys/elldb/core/servers/common"
+	"github.com/ellcrys/elldb/core/servers/db"
+	"github.com/ellcrys/elldb/core/servers/oauth"
+	"github.com/ellcrys/elldb/core/session"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/phayes/freeport"

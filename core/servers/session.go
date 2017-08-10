@@ -9,10 +9,10 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/asaskevich/govalidator"
-	"github.com/ellcrys/elldb/servers/common"
-	"github.com/ellcrys/elldb/servers/db"
-	"github.com/ellcrys/elldb/servers/proto_rpc"
-	"github.com/ellcrys/elldb/session"
+	"github.com/ellcrys/elldb/core/servers/common"
+	"github.com/ellcrys/elldb/core/servers/db"
+	"github.com/ellcrys/elldb/core/servers/proto_rpc"
+	"github.com/ellcrys/elldb/core/session"
 	"github.com/ellcrys/util"
 	"golang.org/x/net/context"
 )

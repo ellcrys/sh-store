@@ -9,8 +9,8 @@ import (
 	"net"
 
 	"github.com/ellcrys/cocoon/core/config"
-	"github.com/ellcrys/elldb/servers/common"
-	"github.com/ellcrys/elldb/servers/proto_rpc"
+	"github.com/ellcrys/elldb/core/servers/common"
+	"github.com/ellcrys/elldb/core/servers/proto_rpc"
 	"github.com/ellcrys/util"
 	"github.com/gorilla/mux"
 	"github.com/jinzhu/copier"

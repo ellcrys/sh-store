@@ -5,7 +5,7 @@ import (
 
 	"github.com/ellcrys/cocoon/core/common"
 	"github.com/ellcrys/elldb/config"
-	"github.com/ellcrys/elldb/servers"
+	"github.com/ellcrys/elldb/core/servers"
 	"github.com/ellcrys/util"
 	"github.com/spf13/cobra"
 )

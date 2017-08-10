@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/ellcrys/cocoon/core/config"
-	"github.com/ellcrys/elldb/servers/db"
-	"github.com/ellcrys/elldb/servers/proto_rpc"
-	"github.com/ellcrys/elldb/session"
+	"github.com/ellcrys/elldb/core/servers/db"
+	"github.com/ellcrys/elldb/core/servers/proto_rpc"
+	"github.com/ellcrys/elldb/core/session"
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/gorm"
 	"google.golang.org/grpc"

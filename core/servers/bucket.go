@@ -1,9 +1,9 @@
 package servers
 
 import (
-	"github.com/ellcrys/elldb/servers/common"
-	"github.com/ellcrys/elldb/servers/db"
-	"github.com/ellcrys/elldb/servers/proto_rpc"
+	"github.com/ellcrys/elldb/core/servers/common"
+	"github.com/ellcrys/elldb/core/servers/db"
+	"github.com/ellcrys/elldb/core/servers/proto_rpc"
 	"github.com/jinzhu/copier"
 	"github.com/jinzhu/gorm"
 	"golang.org/x/net/context"

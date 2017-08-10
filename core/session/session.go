@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/asaskevich/govalidator"
-	"github.com/ellcrys/elldb/servers/db"
+	"github.com/ellcrys/elldb/core/servers/db"
 	"github.com/ellcrys/util"
 	"github.com/jinzhu/gorm"
 	"github.com/pkg/errors"
